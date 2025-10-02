@@ -17,11 +17,22 @@
 - [ ] Click the <kbd>Watch</kbd> button on the top of the [IntelliJ Platform Plugin Template][template] to be notified about releases containing new features and fixes.
 
 <!-- Plugin description -->
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
 
-This specific section is a source for the [plugin.xml](/src/main/resources/META-INF/plugin.xml) file which will be extracted by the [Gradle](/build.gradle.kts) during the build process.
+### 新版IDEA插件开发-脚手架
 
-To keep everything working, do not remove `<!-- ... -->` sections. 
+基于官方模板创建的IDEA插件开发脚手架。
+
+提供开箱即用的基础框架、构建脚本，可快速开发插件、发布插件。
+
+### 基础Gradle构建功能
+
+- [x] Gradle网络代理socks5配置
+- [x] UTF-8编码配置
+- [x] IDEA调试运行参数：指定IU版本并进行激活配置
+- [x] changelog历史更新日志包含所有版本
+- [x] 自动生成私服updatePlugins.xml文件
+- [ ] 上传S3
+
 <!-- Plugin description end -->
 
 ## Installation

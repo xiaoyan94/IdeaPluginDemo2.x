@@ -2,6 +2,58 @@ import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
+import java.time.LocalDate
+import org.gradle.api.DefaultTask
+import org.gradle.api.provider.Property
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.*
+
+/**
+ * Generate local updatePlugins.xml
+ */
+abstract class GenerateLocalUpdateXmlTask : DefaultTask() {
+    @get:Input abstract val pluginName: Property<String>
+    @get:Input abstract val pluginVersion: Property<String>
+    @get:Input abstract val pluginGroup: Property<String>
+    @get:Input abstract val sinceBuild: Property<String>
+    @get:Input abstract val untilBuild: Property<String>
+    @get:Input abstract val downloadUrl: Property<String>
+    @get:Input abstract val pluginDescription: Property<String>
+    @get:Input abstract val changeNotes: Property<String>
+    @get:Input abstract val extraPluginXml: Property<String>
+    @get:OutputFile abstract val outputFile: RegularFileProperty
+
+    @TaskAction
+    fun generate() {
+        val pluginId = "${pluginGroup.get()}.${pluginName.get()}"
+
+        val xmlContent = """
+<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+    <plugin id="$pluginId"
+            url="${downloadUrl.get()}"
+            version="${pluginVersion.get()}">
+        <idea-version since-build="${sinceBuild.get()}" until-build="${untilBuild.get()}"/>
+        <name>${pluginName.get()}</name>
+        <description><![CDATA[
+            ${pluginDescription.get()}
+        ]]>
+        </description>
+        <change-notes><![CDATA[
+            ${changeNotes.get()}
+        ]]>
+        </change-notes>
+        <date>${LocalDate.now()}</date>
+    </plugin>
+${extraPluginXml.get()}
+</plugins>
+        """.trimIndent()
+
+        outputFile.get().asFile.writeText(xmlContent, Charsets.UTF_8)
+        println("✅ Local updatePlugins.xml generated at: ${outputFile.get().asFile.absolutePath}")
+    }
+}
+
 plugins {
     id("java") // Java support
     alias(libs.plugins.kotlin) // Kotlin support
@@ -16,7 +68,7 @@ version = providers.gradleProperty("pluginVersion").get()
 
 // Set the JVM language level used to build the project.
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(17)
 }
 
 // Configure project's dependencies
@@ -69,14 +121,28 @@ intellijPlatform {
 
         val changelog = project.changelog // local variable for configuration cache compatibility
         // Get the latest available change notes from the changelog file
-        changeNotes = providers.gradleProperty("pluginVersion").map { pluginVersion ->
+//        changeNotes = providers.gradleProperty("pluginVersion").map { pluginVersion ->
+//            with(changelog) {
+//                renderItem(
+//                    (getOrNull(pluginVersion) ?: getUnreleased())
+//                        .withHeader(false)
+//                        .withEmptySections(false),
+//                    Changelog.OutputType.HTML,
+//                )
+//            }
+//        }
+
+        // 将 changelog 的所有版本渲染为 HTML 并拼接（最新项放前面）
+        changeNotes = providers.provider {
             with(changelog) {
-                renderItem(
-                    (getOrNull(pluginVersion) ?: getUnreleased())
-                        .withHeader(false)
-                        .withEmptySections(false),
-                    Changelog.OutputType.HTML,
-                )
+                // getAll() 返回 Map<String, Changelog.Item>
+                getAll().entries
+                    .toList()
+//                    .asReversed()
+                    .joinToString(separator = "<hr/>") { (_, item) ->
+                        // renderItem 渲染单个版本为 HTML；你可以调整 withHeader(true/false)
+                        renderItem(item.withHeader(true).withEmptySections(false), Changelog.OutputType.HTML)
+                    }
             }
         }
 
@@ -132,6 +198,44 @@ tasks {
     publishPlugin {
         dependsOn(patchChangelog)
     }
+
+    runIde {
+        // 1.x 写法
+//        jvmArgumentProviders += CommandLineArgumentProvider {
+//            listOf(
+//                "-Dfile.encoding=UTF-8",
+//                "-Xmx4096m",
+//                "-XX:ReservedCodeCacheSize=512m",
+//                "-Xms256m",
+//                "-Dsun.io.useCanonCaches=false",
+//                "-Djdk.http.auth.tunneling.disabledSchemes=\"\"",
+//                "--add-opens=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED",
+//                "--add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED",
+//                "-javaagent:F:\\Tools\\jetbra-8f6785eac5e6e7e8b20e6174dd28bb19d8da7550\\jetbra\\ja-netfilter.jar=jetbrains"
+//            )
+//        }
+
+        jvmArgs(
+            "-Dfile.encoding=UTF-8",
+            "-Xmx4096m",
+            "-XX:ReservedCodeCacheSize=512m",
+            "-Xms256m",
+            "-Dsun.io.useCanonCaches=false",
+            "-Djdk.http.auth.tunneling.disabledSchemes=\"\"",
+            "--add-opens=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED",
+            "-javaagent:F:\\Tools\\jetbra-8f6785eac5e6e7e8b20e6174dd28bb19d8da7550\\jetbra\\ja-netfilter.jar=jetbrains",
+        )
+    }
+
+    compileJava {
+        options.encoding = "UTF-8"
+    }
+
+    compileTestJava {
+        options.encoding = "UTF-8"
+    }
+
 }
 
 intellijPlatformTesting {
@@ -140,6 +244,7 @@ intellijPlatformTesting {
             task {
                 jvmArgumentProviders += CommandLineArgumentProvider {
                     listOf(
+                        "-Dfile.encoding=UTF-8",
                         "-Drobot-server.port=8082",
                         "-Dide.mac.message.dialogs.as.sheets=false",
                         "-Djb.privacy.policy.text=<!--999.999-->",
@@ -154,3 +259,58 @@ intellijPlatformTesting {
         }
     }
 }
+
+// 获取 changelog
+val changelog = project.changelog
+
+tasks.register<GenerateLocalUpdateXmlTask>("generateLocalUpdateXml") {
+    // 指定任务组
+    group = "build"
+
+    // 设置参数
+    pluginName.set(providers.gradleProperty("pluginName"))
+    pluginVersion.set(providers.gradleProperty("pluginVersion"))
+    pluginGroup.set(providers.gradleProperty("pluginGroup"))
+    sinceBuild.set(providers.gradleProperty("pluginSinceBuild"))
+    untilBuild.set(providers.gradleProperty("pluginUntilBuild"))
+    downloadUrl.set(
+        providers.gradleProperty("pluginRepositoryOssUrl").map { "$it${pluginName.get()}-${pluginVersion.get()}.zip" }
+    )
+
+    // 插件描述（从 README.md 的注释块抽取）
+    pluginDescription.set(
+        providers.fileContents(layout.projectDirectory.file("README.md")).asText.map {
+            val start = "<!-- Plugin description -->"
+            val end = "<!-- Plugin description end -->"
+            val lines = it.lines()
+            if (!lines.containsAll(listOf(start, end))) {
+                throw GradleException("Plugin description section not found in README.md:\n$start ... $end")
+            }
+            lines.subList(lines.indexOf(start) + 1, lines.indexOf(end))
+                .joinToString("\n") { line -> markdownToHTML(line) } // 你可以在这里加 markdownToHTML(line)
+        }
+    )
+
+    // 变更日志（HTML 渲染）
+    changeNotes.set(
+        providers.provider {
+            changelog.getAll()
+                .entries
+                .sortedByDescending { it.key } // 新版本在前
+                .joinToString(separator = "<hr/>") { (ver, item) ->
+                    println("rendering changelog: $ver")
+                    changelog.renderItem(
+                        item.withHeader(true).withEmptySections(false),
+                        Changelog.OutputType.HTML
+                    )
+                }
+        }
+    )
+    // 固定 plugin，从文件读取
+    extraPluginXml.set(
+        providers.fileContents(layout.projectDirectory.file("OneClickNavigation-v1-plugin.xml")).asText
+    )
+
+    outputFile.set(layout.buildDirectory.file("updatePlugins.xml"))
+}
+
