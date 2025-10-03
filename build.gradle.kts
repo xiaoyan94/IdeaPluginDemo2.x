@@ -213,7 +213,9 @@ val changelog = project.changelog
 
 tasks.register<GenerateLocalUpdateXmlTask>("generateLocalUpdateXml") {
     // 指定任务组
-    group = "build"
+    group = "Publish To Private Repository"
+
+    dependsOn("buildPlugin", "patchChangelog")
 
     // 设置参数
     pluginName.set(providers.gradleProperty("pluginName"))
@@ -261,4 +263,24 @@ tasks.register<GenerateLocalUpdateXmlTask>("generateLocalUpdateXml") {
 
     outputFile.set(layout.buildDirectory.file("updatePlugins.xml"))
 }
+
+tasks.register<UploadPluginToR2Task>("uploadPluginToR2ByAmazonS3") {
+    group = "Publish To Private Repository"
+
+    dependsOn("buildPlugin", "generateLocalUpdateXml")
+
+    region.set(providers.gradleProperty("r2.s3.region"))
+    bucketName.set(providers.gradleProperty("r2.bucketName"))
+    accessKey.set(providers.gradleProperty("r2.s3.accessKeyId"))
+    secretKey.set(providers.gradleProperty("r2.s3.secretAccessKey"))
+    endpoint.set(providers.gradleProperty("r2.s3.endpoint"))
+
+    pluginName.set(rootProject.name)
+    pluginVersion.set(version.toString())
+
+    pluginFile.set(layout.buildDirectory.file("distributions/${rootProject.name}-${version}.zip"))
+    updateXmlFile.set(layout.buildDirectory.file(providers.gradleProperty("updatePluginXmlFileName")))
+
+}
+
 

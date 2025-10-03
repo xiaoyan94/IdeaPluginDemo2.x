@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.0.3] - 2025-10-03
+
+feat(build): 添加插件上传至CF R2存储的功能
+
+- 在buildSrc中引入AWS S3 SDK依赖
+- 新增UploadPluginToR2Task用于上传插件ZIP及updatePlugins.xml
+- 配置R2的S3兼容API参数，包括访问密钥、端点等
+- 修改generateLocalUpdateXml任务分组并添加依赖
+- 注册uploadPluginToR2ByAmazonS3任务实现自动上传功能
+
 ## [0.0.2] - 2025-10-03
 
 ### Improved
@@ -23,6 +33,7 @@
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/commits/v0.0.1
