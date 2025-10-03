@@ -31,7 +31,7 @@
 - [x] IDEA调试运行参数：指定IU版本并进行激活配置
 - [x] changelog历史更新日志包含所有版本
 - [x] 自动生成私服updatePlugins.xml文件
-- [ ] 上传S3
+- [x] 自动上传插件zip包和updatePlugins.xml文件至私服S3
 
 <!-- Plugin description end -->
 
