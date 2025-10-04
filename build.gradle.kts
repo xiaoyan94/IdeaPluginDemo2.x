@@ -211,6 +211,17 @@ intellijPlatformTesting {
 // 获取 changelog
 val changelog = project.changelog
 
+/**
+ * 辅助函数：优先取环境变量，否则取 gradle.properties
+ */
+fun envOrProperty(envKey: String, propKey: String): Provider<String?> {
+    val envProvider = providers.environmentVariable(envKey)
+    val propProvider = providers.gradleProperty(propKey)
+
+    // 环境变量优先，如果为空则 fallback 到 gradle.properties
+    return envProvider.orElse(propProvider)
+}
+
 tasks.register<GenerateLocalUpdateXmlTask>("generateLocalUpdateXml") {
     // 指定任务组
     group = "Publish To Private Repository"
@@ -269,11 +280,12 @@ tasks.register<UploadPluginToR2Task>("uploadPluginToR2ByAmazonS3") {
 
     dependsOn("buildPlugin", "generateLocalUpdateXml")
 
-    region.set(providers.gradleProperty("r2.s3.region"))
-    bucketName.set(providers.gradleProperty("r2.bucketName"))
-    accessKey.set(providers.gradleProperty("r2.s3.accessKeyId"))
-    secretKey.set(providers.gradleProperty("r2.s3.secretAccessKey"))
-    endpoint.set(providers.gradleProperty("r2.s3.endpoint"))
+    // 优先环境变量，其次 gradle.properties
+    region.set(envOrProperty("R2_S3_REGION", "r2.s3.region"))
+    bucketName.set(envOrProperty("R2_BUCKET_NAME", "r2.bucketName"))
+    endpoint.set(envOrProperty("R2_S3_ENDPOINT", "r2.s3.endpoint"))
+    accessKey.set(envOrProperty("R2_S3_ACCESS_KEY_ID", "r2.s3.accessKeyId"))
+    secretKey.set(envOrProperty("R2_S3_SECRET_ACCESS_KEY", "r2.s3.secretAccessKey"))
 
     pluginName.set(rootProject.name)
     pluginVersion.set(version.toString())
