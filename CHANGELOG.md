@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+chore: 支持环境变量优先的配置读取
+
+- 新增 envOrProperty 辅助函数，优先读取环境变量
+- 修改 R2 存储配置读取逻辑，支持环境变量覆
+- 更新 pluginVersion 从0.0.3 到0.0.4
+
 ## [0.0.3] - 2025-10-03
 
 feat(build): 添加插件上传至CF R2存储的功能
