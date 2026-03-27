@@ -1,15 +1,367 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>com.github.xiaoyan94.ideaplugindemo2x</id>
-    <name>IdeaPluginDemo2.x</name>
-    <vendor>xiaoyan94</vendor>
+    <id>com.zhiyin.plugins.OneClickNavigation</id>
+    <name>OneClickNavigation2.X</name>
+    <vendor>zhiyin</vendor>
 
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.xml</depends>
+    <depends>com.intellij.modules.java</depends>
+    <depends>com.intellij.properties</depends>
+    <depends>JavaScript</depends>
+    <depends>com.intellij.modules.jsp.base</depends>
+    <depends>com.intellij.jsp</depends>
+    <!-- 不再需要依赖 VCS 模块 -->
+    <!-- <depends>com.intellij.modules.vcs</depends> -->
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
+    <!-- Extension points defined by the plugin.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.xiaoyan94.ideaplugindemo2x.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="com.github.xiaoyan94.ideaplugindemo2x.startup.MyProjectActivity" />
+        <!--<toolWindow factoryClass="com.github.xiaoyan94.ideaplugindemo2x.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
+        <!--<postStartupActivity implementation="com.github.xiaoyan94.ideaplugindemo2x.startup.MyProjectActivity" />-->
+
+
+        <!--保证项目启动时就会加载 HtmlFoldingProjectService-->
+        <!--<postStartupActivity implementation="com.zhiyin.plugins.activities.HtmlFoldingStartupActivity"/>-->
+        <postStartupActivity implementation="com.zhiyin.plugins.activities.MyProjectActivity"/>
+
+        <lang.foldingBuilder language="JAVA" implementationClass="com.zhiyin.plugins.foldingBuilder.MyJavaFoldingBuilder"/>
+
+        <!--JavaScript: js 文件和 html 中嵌入的script 标签 js-->
+        <lang.foldingBuilder language="JavaScript" implementationClass="com.zhiyin.plugins.foldingBuilder.MyJavaScriptFoldingBuilder"/>
+
+        <!--HTML: js 文件中的 js 不生效, 仅 html 中嵌入的script 标签内的 js生效-->
+        <!--        <lang.foldingBuilder language="HTML" implementationClass="com.zhiyin.plugins.foldingBuilder.MyJavaScriptFoldingBuilder"/>-->
+
+        <lang.foldingBuilder language="HTML" implementationClass="com.zhiyin.plugins.foldingBuilder.CustomHtmlFoldingBuilder"/>
+
+        <lang.foldingBuilder language="XML" implementationClass="com.zhiyin.plugins.foldingBuilder.MyXMLFoldingBuilder"/>
+
+        <!--suppress PluginXmlValidity 提示无法解析 JSP，但是能正常编译运行 -->
+        <lang.foldingBuilder implementationClass="com.zhiyin.plugins.foldingBuilder.MyJspI18nFoldingBuilder"
+                             language="JSP"/>
+
+        <annotator language="JAVA" implementationClass="com.zhiyin.plugins.annotator.MyJavaAnnotator"/>
+
+        <annotator language="XML" implementationClass="com.zhiyin.plugins.annotator.MyLayoutXMLAnnotator"/>
+
+        <!--        <annotator language="HTML" implementationClass="com.zhiyin.plugins.annotator.MyHTMLAnnotator"/>-->
+
+        <!--        <annotator language="JavaScript" implementationClass="com.zhiyin.plugins.annotator.MyJavaScriptBlockAnnotator"/>-->
+
+        <!--        <annotator language="HTML" implementationClass="com.zhiyin.plugins.annotator.MyFreemarkerHTMLAnnotator"/>-->
+
+        <psi.referenceContributor language="JAVA" implementation="com.zhiyin.plugins.referenceContributor.MyJavaReferenceContributor"/>
+        <psi.referenceContributor language="XML" implementation="com.zhiyin.plugins.referenceContributor.MyXMLReferenceContributor"/>
+
+        <completion.confidence language="JAVA" implementationClass="com.zhiyin.plugins.referenceContributor.MyCompletionConfidence"/>
+
+        <dom.fileMetaData implementation="com.zhiyin.plugins.oneClickNavigation.xml.MybatisXmlFileDescription" rootTagName="mapper"/>
+
+        <dom.fileMetaData implementation="com.zhiyin.plugins.oneClickNavigation.xml.MocXmlFileDescription" rootTagName="Moc"/>
+        <!--
+                <standardResourceProvider implementation="com.zhiyin.plugins.oneClickNavigation.xml.MyBatisSchemaProvider"/>
+        -->
+
+        <codeInsight.lineMarkerProvider language="JAVA" implementationClass="com.zhiyin.plugins.oneClickNavigation.codeInsight.JavaLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="JAVA" implementationClass="com.zhiyin.plugins.oneClickNavigation.codeInsight.JavaToMocLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="XML" implementationClass="com.zhiyin.plugins.oneClickNavigation.codeInsight.MapperXmlLineMarkerProvider"/>
+        <!--<codeInsight.lineMarkerProvider language="JAVA" implementationClass="com.zhiyin.plugins.provider.lineMarkers.FeignClientRelatedItemLineMarkerProvider"/>-->
+
+        <!--<notificationGroup displayType="BALLOON" id="ZhiyinOneClickNavigation"/>-->
+        <notificationGroup
+                id="ZhiyinOneClickNavigation"
+                displayType="BALLOON"
+                isLogByDefault="true" bundle="messages.MyBundle" key="notification.group.zhiyinoneclicknavigation"/>
+
+        <applicationConfigurable parentId="tools" instance="com.zhiyin.plugins.settings.AppSettingsConfigurable"
+                                 id="com.zhiyin.plugins.settings.AppSettingsConfigurable"
+                                 displayName="OneClickNavigation插件设置"/>
+
+        <applicationConfigurable parentId="tools" id="com.zhiyin.plugins.settings.TranslateSettingsConfigurable"
+                                 displayName="OneClickNavigation插件翻译设置" groupId="tools"
+                                 instance="com.zhiyin.plugins.settings.TranslateSettingsConfigurable"/>
+
+        <intentionAction order="first" id="com.zhiyin.plugins.intention.TranslateAndReplaceIntentionAction">
+            <!-- available in 2022.3 and later -->
+            <!-- <language>JAVA</language> -->
+            <className>com.zhiyin.plugins.intention.TranslateAndReplaceIntentionAction</className>
+            <category>OneClickNavigation intentions</category>
+        </intentionAction>
+        <intentionAction order="first" id="com.zhiyin.plugins.intention.XMLTranslateIntentionAction">
+            <className>com.zhiyin.plugins.intention.XMLTranslateIntentionAction</className>
+            <category>OneClickNavigation intentions</category>
+        </intentionAction>
+        <intentionAction order="first" id="com.zhiyin.plugins.intention.JavaScriptI18nTranslateIntentionAction">
+            <className>com.zhiyin.plugins.intention.JavaScriptI18nTranslateIntentionAction</className>
+            <category>OneClickNavigation intentions</category>
+        </intentionAction>
+        <!--<intentionAction order="first" id="com.zhiyin.plugins.intention.FreemarkerI18nTranslateIntentionAction">
+            <className>com.zhiyin.plugins.intention.FreemarkerI18nTranslateIntentionAction</className>
+            <category>OneClickNavigation intentions</category>
+        </intentionAction>-->
+        <completion.contributor language="JAVA" order="first" implementationClass="com.zhiyin.plugins.completion.JavaI18nCompletionContributor"/>
+        <completion.contributor language="JAVA" order="last" implementationClass="com.zhiyin.plugins.completion.DictCompletionContributor"/>
+        <completion.contributor language="XML" order="last" implementationClass="com.zhiyin.plugins.completion.DictCompletionContributor"/>
+        <completion.contributor language="XML" order="first" implementationClass="com.zhiyin.plugins.completion.XmlI18nCompletionContributor"/>
+        <completion.contributor language="HTML" order="first" implementationClass="com.zhiyin.plugins.completion.HtmlI18nCompletionContributor"/>
+        <completion.contributor language="JavaScript" order="first" implementationClass="com.zhiyin.plugins.completion.HtmlI18nCompletionContributor"/>
+        <defaultLiveTemplates file="liveTemplates/I18nTemplates.xml"/>
+        <annotator language="JAVA" order="first" implementationClass="com.zhiyin.plugins.annotator.SysLoggerAnnotator"/>
+        <!--        <annotator language="JAVA" order="first" implementationClass="com.zhiyin.plugins.annotator.StringUtilsAnnotator"/>-->
+        <editorFactoryMouseListener implementation="com.zhiyin.plugins.listeners.MyEditorMouseListener"/>
+        <!--TODO：改为Action -->
+        <!--        <codeInsight.lineMarkerProvider language="JavaScript" implementationClass="com.zhiyin.plugins.provider.lineMarkers.JSUrlRelatedItemLineMarkerProvider"/>-->
+<!--
+        <codeInsight.lineMarkerProvider language="JavaScript" implementationClass="com.zhiyin.plugins.microservices.HtmlUrlNavigationRelatedItemLineMarkerProvider"/>
+-->
+        <codeInsight.lineMarkerProvider language="HTML" implementationClass="com.zhiyin.plugins.microservices.HtmlUrlNavigationRelatedItemLineMarkerProvider"/>
+        <!--<codeInsight.lineMarkerProvider language="XML" implementationClass="com.zhiyin.plugins.provider.lineMarkers.LayoutUrlRelatedItemLineMarkerProvider"/>-->
+        <codeInsight.lineMarkerProvider language="XML" implementationClass="com.zhiyin.plugins.microservices.LayoutUrlNavigationRelatedItemLineMarkerProvider"/>
+        <!--TODO：改为Action：GoToLayout-->
+        <!--        <codeInsight.lineMarkerProvider language="HTML" implementationClass="com.zhiyin.plugins.provider.lineMarkers.JSLayoutRelatedItemLineMarkerProvider"/>-->
+        <completion.contributor language="XML" order="first" implementationClass="com.zhiyin.plugins.completion.XmlLayoutComboboxCompletionContributor"/>
+        <toolWindow id="OneClickNavigationToolWindow" factoryClass="com.zhiyin.plugins.toolWindow.MyToolWindowFactory" anchor="right" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+        </toolWindow>
+
+        <codeInsight.lineMarkerProvider
+                language="JAVA"
+                implementationClass="com.zhiyin.plugins.microservices.UrlNavigationAnnotatedLineMarkerProvider"/>
+
+        <searchEverywhereContributor
+                implementation="com.zhiyin.plugins.search.UrlSearchEverywhereContributorFactory"/>
     </extensions>
+
+    <actions>
+        <group id="com.zhiyin.plugins.ToolsMenuGroup" text="OneClickNavigation插件" popup="true"
+               description="OneClickNavigation tools" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+            <add-to-group group-id="ToolsMenu" anchor="first"/>
+
+            <action id="ZYPlugin.ClearTranslationCache" class="com.zhiyin.plugins.actions.ClearTranslationCacheAction"
+                    text="清空翻译缓存" description="Clear translation cache" icon="AllIcons.Actions.Refresh"/>
+
+            <action id="ZYPlugin.TestTranslate" class="com.zhiyin.plugins.actions.TranslateTestAction" text="测试翻译"
+                    description="Test translate" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16"/>
+
+            <action id="com.zhiyin.plugins.actions.TestCredentialAction" class="com.zhiyin.plugins.actions.TestCredentialAction"
+                    text="测试保存密码凭证">
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.ShowLanguageAction" class="com.zhiyin.plugins.actions.ShowLanguageAction"
+                    text="查看当前文件Language信息" icon="AllIcons.General.Information">
+            </action>
+        </group>
+
+        <action id="com.zhiyin.plugins.actions.testAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                class="com.zhiyin.plugins.actions.ReloadXmlFileCacheMapAction" text="刷新数据"
+                description="Refresh cache map">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="first"/>
+        </action>
+
+        <action id="com.zhiyin.plugins.actions.GenerateDictAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                class="com.zhiyin.plugins.actions.GenerateDictAction" text="生成用户字典"
+                description="Generate Dict">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="first"/>
+        </action>
+
+        <group id="com.zhiyin.plugins.EditorPopupMenu" popup="false"
+               icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+
+
+            <action id="com.zhiyin.plugins.actions.ConvertToCDATAAction"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    class="com.zhiyin.plugins.actions.ConvertToCDATAAction"
+                    text="转换为CDATA块"
+                    description="XML：将所选文本转换为 CDATA 块"/>
+
+            <action id="com.zhiyin.plugins.actions.CopySelectedSqlAction"
+                    class="com.zhiyin.plugins.actions.CopySelectedSqlAction"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    text="复制格式化后的SQL"
+                    description="复制可执行SQL（自动替换language、移除标签、移除行首空白）">
+                <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="com.zhiyin.plugins.actions.ConvertToCDATAAction"/>
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.ImportMapperXMLSortColumnAction"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    class="com.zhiyin.plugins.actions.ImportMapperXMLSortColumnAction"
+                    text="排序column字段"
+                    description="Import mapper: 根据column顺序一键排序col字段值">
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.OpenClassFileAction"
+                    class="com.zhiyin.plugins.actions.OpenClassFileAction"
+                    text="打开class文件"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="Opens the corresponding .class file for the current Java file">
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.FindControllerByFeignUrlAction"
+                    class="com.zhiyin.plugins.actions.FindControllerByFeignUrlAction"
+                    text="Find by URL"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="FindControllerByFeignUrlAction">
+            </action>
+
+<!--            <action id="com.zhiyin.plugins.actions.FindFeignByControllerUrlAction"
+                    class="com.zhiyin.plugins.actions.FindFeignByControllerUrlAction"
+                    text="Go To Feign"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="FindFeignByControllerUrlAction">
+            </action>-->
+
+            <action id="com.zhiyin.plugins.actions.GoToLayoutXmlAction"
+                    class="com.zhiyin.plugins.actions.GoToLayoutXmlAction"
+                    text="Layout &lt;--> HTML"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="Guess layout file">
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.InsertJSI18nFuncAction"
+                    class="com.zhiyin.plugins.actions.InsertJSI18nFuncAction"
+                    text="JavaScript: 自动翻译并插入资源串函数"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="JavaScript中插入zhiyin.i18n.translate函数;">
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.InsertJavaI18nFuncAction"
+                    class="com.zhiyin.plugins.actions.InsertJavaI18nFuncAction"
+                    text="Java: 自动翻译并插入资源串函数"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="Java中插入I18n函数;">
+            </action>
+
+            <action id="com.zhiyin.plugins.actions.InsertFreeMarkerI18nDirectiveAction"
+                    class="com.zhiyin.plugins.actions.InsertFreeMarkerI18nDirectiveAction"
+                    text="FreeMarker/JSP: 插入message指令/标签"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                    description="FreeMarker中插入&lt;@message指令; JSP中插入&lt;mes:message标签">
+            </action>
+        </group>
+
+        <action id="com.zhiyin.plugins.actions.SearchWithBaiduAction"
+                class="com.zhiyin.plugins.actions.SearchWithBaiduAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.baiduIcon"
+                text="百度搜索" description="Baidu:百度一下">
+            <add-to-group group-id="com.zhiyin.plugins.EditorPopupMenu" anchor="first"/>
+            <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
+        </action>
+        <action id="com.zhiyin.plugins.actions.ProjectTypeCheckAction"
+                class="com.zhiyin.plugins.actions.ProjectTypeCheckAction" text="当前项目类型"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="Print：测试当前项目类型">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>
+        <!--<action id="com.zhiyin.plugins.actions.codeGenerator.GenerateXmlAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                class="com.zhiyin.plugins.actions.codeGenerator.GenerateXmlAction" text="测试生成文件"
+                description="Test generate XML file">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="first"/>
+        </action>-->
+        <action id="com.zhiyin.plugins.actions.codeGenerator.DataModelGeneratorAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                class="com.zhiyin.plugins.actions.codeGenerator.DataModelGeneratorAction" text="模型代码生成器"
+                description="Moc、Layout、Controller、Service、Dao、MyBatis mapper一键生成">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="first"/>
+        </action>
+        <!--<action id="com.zhiyin.plugins.actions.CollectUrlsAction" class="com.zhiyin.plugins.actions.CollectUrlsAction"
+                text="测试收集Controller">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>-->
+        <action id="com.zhiyin.plugins.actions.EfficientSearchXmlTagAction"
+                class="com.zhiyin.plugins.actions.EfficientSearchXmlTagAction" text="TestAction"
+                description="To test sth.">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="after"
+                          relative-to-action="com.zhiyin.plugins.actions.CollectUrlsAction"/>
+        </action>
+        <action id="com.zhiyin.plugins.actions.MybatisLogSQLAction" class="com.zhiyin.plugins.actions.MybatisLogSQLAction" text="提取SQL语句" description="Sql from Mybatis log" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+            <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
+        </action>
+
+        <action id="GenerateExcelHeader"
+                class="com.zhiyin.plugins.actions.GenerateExcelHeaderAction"
+                text="一键生成导入模板 Excel"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="根据 column 标签生成 Excel ">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+
+        <action id="TestCommitAction"
+                class="com.zhiyin.plugins.actions.TestCommitAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+        >
+            <!--suppress PluginXmlValidity -->
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
+        </action>
+
+        <action id="com.zhiyin.plugins.actions.MyBuildModuleAction"
+                class="com.zhiyin.plugins.actions.MyBuildModuleAction"
+                icon="AllIcons.Actions.Compile">
+            <add-to-group group-id="MainToolBar" anchor="last"/>
+        </action>
+        <action id="com.zhiyin.plugins.i18n.I18nTestAction"
+                class="com.zhiyin.plugins.i18n.I18nTestAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="first"/>
+        </action>
+
+        <action id="com.zhiyin.plugins.microservices.CollectControllersAction"
+                class="com.zhiyin.plugins.microservices.CollectControllersAction"
+                text="Collect Microservice Controllers"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="Scan project controllers and build URL -> method mapping cache">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>
+
+        <action
+                id="AutoTranslateAction"
+                class="com.zhiyin.plugins.actions.AutoTranslateAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                text="AutoTranslate"
+                description="自动生成多语言资源键值">
+
+            <!-- 项目视图中的资源文件右键菜单 -->
+            <add-to-group
+                    group-id="ProjectViewPopupMenu"
+                    anchor="first"/>
+
+            <!-- 属性文件编辑器内右键菜单 -->
+            <add-to-group
+                    group-id="EditorPopupMenu"
+                    anchor="first"/>
+
+            <!-- 文件操作工具栏 -->
+            <add-to-group
+                    group-id="FileMenu"
+                    anchor="first"/>
+        </action>
+    </actions>
+
+    <projectListeners>
+        <!--在轻服务中使用代码注册-->
+        <!--<listener
+                class="com.zhiyin.plugins.listeners.MyXmlFileListener"
+                topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>-->
+
+        <!--<listener class="com.zhiyin.plugins.listeners.MyProjectManagerListener"
+                  topic="com.intellij.openapi.project.ProjectManagerListener"/>-->
+
+        <listener class="com.zhiyin.plugins.listeners.MyFileEditorManagerListener"
+                  topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+
+        <listener class="com.zhiyin.plugins.listeners.MyFileEditorManagerListener$Before"
+                  topic="com.intellij.openapi.fileEditor.FileEditorManagerListener$Before"/>
+
+        <!--NOT WORKING-->
+        <!--<listener class="com.zhiyin.plugins.listeners.MyFileEditorManagerListener$MyCaretListener"
+                  topic="com.intellij.openapi.editor.event.CaretListener"/>-->
+        <!--<listener class="com.zhiyin.plugins.listeners.MyFileEditorManagerListener$MyEditorMouseMotionListener"
+                  topic="com.intellij.openapi.editor.event.EditorMouseMotionListener"/>-->
+    </projectListeners>
+
 </idea-plugin>

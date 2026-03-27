@@ -1,6 +1,8 @@
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask
 
 plugins {
     id("java") // Java support
@@ -14,9 +16,18 @@ plugins {
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
+var pluginName = providers.gradleProperty("pluginName").get()
+var pluginVersion = providers.gradleProperty("pluginVersion").get()
+
 // Set the JVM language level used to build the project.
 kotlin {
     jvmToolchain(17)
+}
+
+sourceSets {
+    main {
+        java.srcDirs("src/main/kotlin", "src/main/java")
+    }
 }
 
 // Configure project's dependencies
@@ -34,9 +45,22 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
 
+    implementation(libs.okhttp)
+    implementation(libs.fastjson)
+    implementation(libs.freemarker)
+    implementation(libs.mysqlConnector)
+    implementation(libs.poiOoxml)
+//    implementation("com.squareup.okhttp3:okhttp:4.12.0") // 添加OkHttp依赖项
+//    implementation("dddd.alibaba:fastjson:2.0.28")
+//    implementation("org.freemarker:freemarker:2.3.33")
+//    // https://mvnrepository.com/artifact/mysql/mysql-connector-java
+//    implementation("mysql:mysql-connector-java:8.0.33")
+//    implementation("org.apache.poi:poi-ooxml:5.2.5")
+
+
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
-        create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+        create(IntelliJPlatformType.IntellijIdeaUltimate, providers.gradleProperty("platformVersion"))
 
         // Plugin Dependencies. Uses `platformBundledPlugins` property from the gradle.properties file for bundled IntelliJ Platform plugins.
         bundledPlugins(providers.gradleProperty("platformBundledPlugins").map { it.split(',') })
@@ -50,6 +74,9 @@ dependencies {
 
 // Configure IntelliJ Platform Gradle Plugin - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
 intellijPlatform {
+
+    buildSearchableOptions = false
+
     pluginConfiguration {
         name = providers.gradleProperty("pluginName")
         version = providers.gradleProperty("pluginVersion")
@@ -139,6 +166,14 @@ kover {
 }
 
 tasks {
+    patchPluginXml {
+        pluginName = providers.gradleProperty("pluginName")
+    }
+
+    buildPlugin {
+        archiveFileName.set("${pluginName}-${pluginVersion}.zip")
+    }
+
     wrapper {
         gradleVersion = providers.gradleProperty("gradleVersion").get()
     }
@@ -186,7 +221,8 @@ tasks {
 
 }
 
-intellijPlatformTesting {
+/*1.x写法*/
+/*intellijPlatformTesting {
     runIde {
         register("runIdeForUiTests") {
             task {
@@ -205,6 +241,25 @@ intellijPlatformTesting {
                 robotServerPlugin()
             }
         }
+    }
+}*/
+
+/*2.x写法*/
+val runIdeForUiTests by intellijPlatformTesting.runIde.registering {
+    task {
+        jvmArgumentProviders += CommandLineArgumentProvider {
+            listOf(
+                "-Dfile.encoding=UTF-8",
+                "-Drobot-server.port=8082",
+                "-Dide.mac.message.dialogs.as.sheets=false",
+                "-Djb.privacy.policy.text=<!--999.999-->",
+                "-Djb.consents.confirmation.enabled=false",
+            )
+        }
+    }
+
+    plugins {
+        robotServerPlugin()
     }
 }
 
@@ -225,10 +280,12 @@ fun envOrProperty(envKey: String, propKey: String): Provider<String?> {
 tasks.register<GenerateLocalUpdateXmlTask>("generateLocalUpdateXml") {
     // 指定任务组
     group = "Publish To Private Repository"
+    description = "Generate local updatePlugins.xml"
 
     dependsOn("buildPlugin", "patchChangelog")
 
     // 设置参数
+    pluginId.set(providers.gradleProperty("pluginId"))
     pluginName.set(providers.gradleProperty("pluginName"))
     pluginVersion.set(providers.gradleProperty("pluginVersion"))
     pluginGroup.set(providers.gradleProperty("pluginGroup"))
@@ -277,6 +334,7 @@ tasks.register<GenerateLocalUpdateXmlTask>("generateLocalUpdateXml") {
 
 tasks.register<UploadPluginToR2Task>("uploadPluginToR2ByAmazonS3") {
     group = "Publish To Private Repository"
+    description = "Upload built plugin and updatePlugins.xml to Amazon S3"
 
     dependsOn("buildPlugin", "generateLocalUpdateXml")
 
@@ -287,12 +345,46 @@ tasks.register<UploadPluginToR2Task>("uploadPluginToR2ByAmazonS3") {
     accessKey.set(envOrProperty("R2_S3_ACCESS_KEY_ID", "r2.s3.accessKeyId"))
     secretKey.set(envOrProperty("R2_S3_SECRET_ACCESS_KEY", "r2.s3.secretAccessKey"))
 
-    pluginName.set(rootProject.name)
-    pluginVersion.set(version.toString())
+    this.pluginName.set(providers.gradleProperty("pluginName"))
+    this.pluginVersion.set(version.toString())
 
-    pluginFile.set(layout.buildDirectory.file("distributions/${rootProject.name}-${version}.zip"))
+    pluginFile.set(layout.buildDirectory.file("distributions/${pluginName.get()}-${pluginVersion.get()}.zip"))
     updateXmlFile.set(layout.buildDirectory.file(providers.gradleProperty("updatePluginXmlFileName")))
 
 }
 
+tasks.register<Copy>("copyPluginToLocalDir") {
+    group = "Publish To Private Repository"
+    description = "Copy built plugin and updatePlugins.xml to a local directory"
 
+    dependsOn("buildPlugin", "generateLocalUpdateXml")
+
+    // 使用 directoryProperty 读取或默认目录
+    // 输出目录：优先 gradle.properties: localPublishDir，否则默认 projectDir/local-publish
+    val outputDir = objects.directoryProperty()
+    outputDir.set(providers.gradleProperty("localPublishDir").map { dirPath: String -> layout.projectDirectory.dir(dirPath) } // String -> Directory
+        .orElse(layout.projectDirectory.dir("local-publish"))            // 默认 Directory
+    )
+
+    // 要复制的文件
+    from(layout.buildDirectory.file("distributions/${pluginName}-${pluginVersion}.zip"))
+    from(layout.buildDirectory.file(providers.gradleProperty("updatePluginXmlFileName")))
+
+    // 输出目标目录
+    into(outputDir)
+
+    doFirst {
+        println("📦 Copying plugin and update XML to: ${outputDir.get().asFile.absolutePath}")
+    }
+
+    doLast {
+        println("✅ Files copied successfully to ${outputDir.get().asFile.absolutePath}")
+    }
+}
+
+/*
+tasks.jar {
+    archiveBaseName.set(pluginName)     // 主体名（不含版本号）
+    archiveVersion.set(pluginVersion)          // 可选，默认取 project.version
+}
+*/

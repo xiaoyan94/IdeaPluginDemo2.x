@@ -1,0 +1,44 @@
+package com.zhiyin.plugins.actions;
+
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.Messages;
+import com.zhiyin.plugins.service.ComboboxUrlService;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.List;
+import java.util.Set;
+
+public class EfficientSearchXmlTagAction extends AnAction {
+
+    @Override
+    public void actionPerformed(AnActionEvent e) {
+        Project project = e.getProject();
+        if (project == null) return;
+
+        String tagName = Messages.showInputDialog(project, "Enter XML tag name to search:", "Search XML Tag", null);
+        if (tagName == null || tagName.isEmpty()) return;
+
+        String attr = Messages.showInputDialog(project, "Enter XML attribute name to search:", "Search XML Attribute", null);
+        if (attr == null || attr.isEmpty()) return;
+
+        ComboboxUrlService service = project.getService(ComboboxUrlService.class);
+        service.searchAndCacheXmlTags(tagName, attr);
+
+        Set<String> cachedResults = service.getCachedResults(tagName, attr);
+
+        if (cachedResults.isEmpty()) {
+            Messages.showInfoMessage("No matching tags found.", "Search Result");
+        } else {
+            String resultMessage = String.join("\n", cachedResults);
+            Messages.showInfoMessage(resultMessage, "Search Result");
+        }
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+        return ActionUpdateThread.BGT;
+    }
+}
