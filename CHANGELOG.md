@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-03-27
+
+OneClickNavication2.X测试版：
+
+- 添加 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>\\</kbd> 快速搜索URL
+- 添加类似插件 `AutoTranslate` 的功能
+- 优化部分功能使用体验
+- 更新部分API版本，适配最新版本IDEA
+- 适配 MES/APS 模块
+
+## [2.0.4-alpha.2] - 2025-11-06
+
+OneClickNavication2.X测试版：
+
+- 添加 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>\\</kbd> 快速搜索URL
+- 添加类似插件 `AutoTranslate` 的功能
+- 优化部分功能使用体验
+- 更新部分API版本，适配最新版本IDEA
+
+## [2.0.4-alpha.1] - 2025-10-21
+
+OneClickNavication2.X测试版：
+
+- 适配IDEA 2024.1及以后版本
+
 ## [0.0.4] - 2025-10-05
 
 chore: 支持环境变量优先的配置读取
@@ -41,7 +66,10 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.5...HEAD
+[2.0.5]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.4-alpha.2...v2.0.5
+[2.0.4-alpha.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.4-alpha.1...v2.0.4-alpha.2
+[2.0.4-alpha.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.4...v2.0.4-alpha.1
 [0.0.4]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.1...v0.0.2

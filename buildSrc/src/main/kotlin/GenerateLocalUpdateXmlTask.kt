@@ -12,6 +12,7 @@ import java.time.LocalDateTime
  */
 abstract class GenerateLocalUpdateXmlTask : DefaultTask() {
     @get:Input abstract val pluginName: Property<String>
+    @get:Input abstract val pluginId: Property<String>
     @get:Input abstract val pluginVersion: Property<String>
     @get:Input abstract val pluginGroup: Property<String>
     @get:Input abstract val sinceBuild: Property<String>
@@ -24,12 +25,11 @@ abstract class GenerateLocalUpdateXmlTask : DefaultTask() {
 
     @TaskAction
     fun generate() {
-        val pluginId = "${pluginGroup.get()}.${pluginName.get()}"
 
         val xmlContent = """
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
-    <plugin id="$pluginId"
+    <plugin id="${pluginId.get()}"
             url="${downloadUrl.get()}"
             version="${pluginVersion.get()}">
         <idea-version since-build="${sinceBuild.get()}" until-build="${untilBuild.get()}"/>
