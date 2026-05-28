@@ -15,15 +15,16 @@
             </builds>
           </compositeBuild>
         </compositeConfiguration>
+        <option name="delegatedBuild" value="false" />
+        <option name="testRunner" value="PLATFORM" />
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
-        <option name="gradleHome" value="D:\Gradle\gradle-8.14.3" />
-        <option name="gradleJvm" value="corretto-17" />
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/buildSrc" />
           </set>
         </option>
+        <option name="myGradleHome" value="D:\Gradle\gradle-8.14.3" />
       </GradleProjectSettings>
     </option>
   </component>
