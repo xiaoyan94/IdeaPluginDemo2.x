@@ -309,4 +309,30 @@ public final class I18nCacheManager {
         }
     }
 
+    /**
+     * 查找文件所属的模块名
+     * 通过检查文件是否位于模块的 i18n 目录下来确定
+     */
+    public static String findModuleForFile(Project project, VirtualFile file) {
+        if (project == null || file == null) return null;
+
+        com.intellij.openapi.module.ModuleManager moduleManager = com.intellij.openapi.module.ModuleManager.getInstance(project);
+        com.intellij.openapi.module.Module[] modules = moduleManager.getModules();
+
+        for (com.intellij.openapi.module.Module module : modules) {
+            com.intellij.openapi.roots.ModuleRootManager rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(module);
+            VirtualFile[] roots = rootManager.getSourceRoots(false);
+            for (VirtualFile root : roots) {
+                if (!root.getPath().contains("/resources")) continue;
+                VirtualFile i18nDir = root.findFileByRelativePath("i18n");
+                if (i18nDir != null && i18nDir.isDirectory()) {
+                    if (com.intellij.openapi.vfs.VfsUtilCore.isAncestor(i18nDir, file, true)) {
+                        return module.getName();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
 }

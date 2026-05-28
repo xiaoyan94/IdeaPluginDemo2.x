@@ -128,6 +128,9 @@
         <toolWindow id="OneClickNavigationToolWindow" factoryClass="com.zhiyin.plugins.toolWindow.MyToolWindowFactory" anchor="right" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
         </toolWindow>
 
+        <toolWindow id="SvnChangeAnalysisToolWindow" factoryClass="com.zhiyin.plugins.toolWindow.SvnChangeAnalysisToolWindowFactory" anchor="right" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+        </toolWindow>
+
         <codeInsight.lineMarkerProvider
                 language="JAVA"
                 implementationClass="com.zhiyin.plugins.microservices.UrlNavigationAnnotatedLineMarkerProvider"/>
@@ -253,6 +256,13 @@
             <add-to-group group-id="com.zhiyin.plugins.EditorPopupMenu" anchor="first"/>
             <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
         </action>
+        <action id="com.zhiyin.plugins.actions.SvnChangeAnalysisAction"
+                class="com.zhiyin.plugins.actions.SvnChangeAnalysisAction" text="SVN 变更分析"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="分析各模块的 SVN 文件变更数量和提交时间范围">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>
+
         <action id="com.zhiyin.plugins.actions.ProjectTypeCheckAction"
                 class="com.zhiyin.plugins.actions.ProjectTypeCheckAction" text="当前项目类型"
                 icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
