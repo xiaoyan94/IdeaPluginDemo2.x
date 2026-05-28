@@ -1,0 +1,26 @@
+---
+description: 升级插件版本的步骤备忘。支持指定版本号或自动递增。
+alwaysApply: false
+enabled: true
+updatedAt: 2026-05-28T05:18:54.728Z
+provider: 
+---
+
+# 插件版本升级步骤
+
+触发方式：
+- 用户说「升级版本到 x.x.x」→ 使用指定版本号
+- 用户说「升级版本」（无版本号）→ 自动在当前版本最后一位 +1（如 2.0.6 → 2.0.7），需先读 `gradle.properties` 获取当前版本
+
+## 1. 修改 `gradle.properties`
+改 `pluginVersion` 为目标版本号
+
+## 2. 修改 `CHANGELOG.md`
+在 `## [Unreleased]` 下面插入变更内容（无需加版本号）：
+```markdown
+- 变更内容1
+- 变更内容2
+```
+
+## 3. 构建发布
+执行 `gradle buildPlugin` 即可生成新版插件 zip。
