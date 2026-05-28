@@ -11,6 +11,7 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.encoding.EncodingManager;
 import com.intellij.psi.PsiManager;
@@ -349,7 +350,13 @@ public class MyPropertiesUtil {
             }
         }
 
+        if (virtualFiles.isEmpty()) {
+            return;
+        }
+
         ApplicationManager.getApplication().invokeLater(() -> WriteCommandAction.runWriteCommandAction(project, () -> {
+            I18nCacheManager cacheManager = project.getService(I18nCacheManager.class);
+
             for (VirtualFile virtualFile : virtualFiles) {
                 PropertiesFile propertiesFile = (PropertiesFile) PsiManager.getInstance(project)
                         .findFile(virtualFile);
@@ -365,8 +372,30 @@ public class MyPropertiesUtil {
                             iProperty.setValue(value);
                         }
                     }
+
+                    // 强制刷新 VirtualFile，确保 VFS 同步
+                    virtualFile.refresh(false, false);
                 }
             }
+
+            // 等待 VFS 刷新后更新缓存
+            ApplicationManager.getApplication().invokeLater(() -> {
+                for (VirtualFile virtualFile : virtualFiles) {
+                    // 使用 I18nCacheManager.findModuleForFile 查找文件所属模块
+                    String moduleName = I18nCacheManager.findModuleForFile(project, virtualFile);
+                    if (moduleName == null) {
+                        moduleName = module == null ? "" : getSimpleModuleName(module);
+                    }
+
+                    // 更新 I18nCacheManager 缓存
+                    cacheManager.loadSingleFile(moduleName, virtualFile);
+                }
+
+                // 再次延迟刷新 inlays，确保缓存已更新
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    com.zhiyin.plugins.manager.HtmlFoldingManager.refreshAllEditorsInlays(project);
+                });
+            });
         }));
     }
 

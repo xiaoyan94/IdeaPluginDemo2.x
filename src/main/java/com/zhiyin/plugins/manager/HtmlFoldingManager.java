@@ -7,6 +7,9 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.event.*;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditor;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
@@ -112,6 +115,26 @@ public class HtmlFoldingManager implements Disposable {
             editor.putUserData(MANAGER_KEY, manager);
         }
         return manager;
+    }
+
+    /**
+     * 刷新所有打开的 Editor 的 inlays
+     * 用于在 i18n 文件更新后，强制刷新所有显示的翻译
+     */
+    public static void refreshAllEditorsInlays(@NotNull Project project) {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            FileEditorManager fileEditorManager = FileEditorManager.getInstance(project);
+            for (VirtualFile openedFile : fileEditorManager.getOpenFiles()) {
+                for (FileEditor fileEditor : fileEditorManager.getEditors(openedFile)) {
+                    if (fileEditor instanceof TextEditor textEditor) {
+                        HtmlFoldingManager manager = textEditor.getEditor().getUserData(MANAGER_KEY);
+                        if (manager != null) {
+                            manager.updateInlays();
+                        }
+                    }
+                }
+            }
+        });
     }
 
     private void handleMouseClick(EditorMouseEvent event) {
