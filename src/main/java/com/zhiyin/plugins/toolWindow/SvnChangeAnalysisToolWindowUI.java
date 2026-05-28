@@ -12,6 +12,9 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -31,8 +34,12 @@ public class SvnChangeAnalysisToolWindowUI {
 
     private final JTextField dateField = new JTextField(10);
     private final JTextField pathField = new JTextField(20);
+    private final JButton datePickerButton = new JButton("📅");
+    private final JPanel datePanel = new JPanel(new BorderLayout());
+    private final JButton pathChooserButton = new JButton("📂");
+    private final JPanel pathPanel = new JPanel(new BorderLayout());
     private final JButton analyzeButton = new JButton("分析变更");
-    private final JLabel statusLabel = new JLabel("就绪");
+    private final JTextArea statusArea = new JTextArea("就绪");
 
     private final String[] columnNames = {"模块", "变更文件数", "最早提交", "最晚提交"};
     private final DefaultTableModel tableModel = new DefaultTableModel(columnNames, 0) {
@@ -56,10 +63,8 @@ public class SvnChangeAnalysisToolWindowUI {
     }
 
     private void initUI() {
-        // 默认日期：前一天
-        Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.DAY_OF_YEAR, -1);
-        dateField.setText(new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime()));
+        // 默认日期：今天
+        dateField.setText(new SimpleDateFormat("yyyy-MM-dd").format(new Date()));
         pathField.setText("springboot/app/");
 
         analyzeButton.setIcon(AllIcons.Actions.Execute);
@@ -68,40 +73,232 @@ public class SvnChangeAnalysisToolWindowUI {
         TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
         resultTable.setRowSorter(sorter);
         resultTable.setFillsViewportHeight(true);
+        resultTable.setCellSelectionEnabled(true);
+
+        // Ctrl+C 复制表格选中内容
+        resultTable.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()), "copy");
+        resultTable.getActionMap().put("copy", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                StringBuilder sb = new StringBuilder();
+                int[] rows = resultTable.getSelectedRows();
+                int[] cols = resultTable.getSelectedColumns();
+                for (int r = 0; r < rows.length; r++) {
+                    for (int c = 0; c < cols.length; c++) {
+                        if (c > 0) sb.append('\t');
+                        Object val = resultTable.getValueAt(rows[r], cols[c]);
+                        if (val != null) sb.append(val.toString());
+                    }
+                    if (r < rows.length - 1) sb.append('\n');
+                }
+                if (sb.length() > 0) {
+                    Toolkit.getDefaultToolkit().getSystemClipboard()
+                            .setContents(new StringSelection(sb.toString()), null);
+                }
+            }
+        });
+
+        // 状态栏配置
+        statusArea.setEditable(false);
+        statusArea.setLineWrap(true);
+        statusArea.setWrapStyleWord(true);
+        statusArea.setBackground(UIManager.getColor("Label.background"));
+        statusArea.setForeground(UIManager.getColor("Label.disabledForeground"));
 
         // 按钮事件
         analyzeButton.addActionListener(e -> performAnalysis());
         dateField.addActionListener(e -> performAnalysis());
         pathField.addActionListener(e -> performAnalysis());
+
+        datePickerButton.setToolTipText("选择日期");
+        datePickerButton.setMargin(new Insets(0, 4, 0, 4));
+        datePanel.add(dateField, BorderLayout.CENTER);
+        datePanel.add(datePickerButton, BorderLayout.EAST);
+        datePickerButton.addActionListener(e -> showDatePicker());
+
+        // 防止日期面板和输入框被压缩
+        dateField.setMinimumSize(new Dimension(80, dateField.getPreferredSize().height));
+        datePanel.setMinimumSize(new Dimension(150, dateField.getPreferredSize().height));
+
+        // 路径选择面板
+        pathChooserButton.setToolTipText("选择路径");
+        pathChooserButton.setMargin(new Insets(0, 4, 0, 4));
+        pathPanel.add(pathField, BorderLayout.CENTER);
+        pathPanel.add(pathChooserButton, BorderLayout.EAST);
+        pathChooserButton.addActionListener(e -> showPathChooser());
+        pathField.setMinimumSize(new Dimension(80, pathField.getPreferredSize().height));
+        pathPanel.setMinimumSize(new Dimension(150, pathField.getPreferredSize().height));
+    }
+
+    private void showDatePicker() {
+        Calendar cal = Calendar.getInstance();
+        try {
+            Date d = new SimpleDateFormat("yyyy-MM-dd").parse(dateField.getText().trim());
+            if (d != null) cal.setTime(d);
+        } catch (Exception ignored) {}
+
+        // 保存当前选中的日期用于高亮
+        final int selectedYear = cal.get(Calendar.YEAR);
+        final int selectedMonth = cal.get(Calendar.MONTH);
+        final int selectedDay = cal.get(Calendar.DAY_OF_MONTH);
+
+        JDialog dialog = new JDialog(
+                (Frame) SwingUtilities.getWindowAncestor(dateField), "选择日期", true);
+        dialog.setLayout(new BorderLayout());
+        dialog.setResizable(false);
+
+        // 月份导航
+        JPanel navPanel = new JPanel(new BorderLayout());
+        SimpleDateFormat monthFmt = new SimpleDateFormat("yyyy年 M月");
+        JLabel monthLabel = new JLabel("", SwingConstants.CENTER);
+
+        JButton prevBtn = new JButton("<");
+        prevBtn.setMargin(new Insets(0, 4, 0, 4));
+        JButton nextBtn = new JButton(">");
+        nextBtn.setMargin(new Insets(0, 4, 0, 4));
+        navPanel.add(prevBtn, BorderLayout.WEST);
+        navPanel.add(monthLabel, BorderLayout.CENTER);
+        navPanel.add(nextBtn, BorderLayout.EAST);
+
+        // 日历网格
+        JPanel grid = new JPanel(new GridLayout(0, 7, 1, 1));
+        String[] dayHeaders = {"日", "一", "二", "三", "四", "五", "六"};
+
+        Runnable refresh = () -> {
+            grid.removeAll();
+            monthLabel.setText(monthFmt.format(cal.getTime()));
+            for (String h : dayHeaders) {
+                JLabel lbl = new JLabel(h, SwingConstants.CENTER);
+                lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 10f));
+                grid.add(lbl);
+            }
+            Calendar tmp = (Calendar) cal.clone();
+            tmp.set(Calendar.DAY_OF_MONTH, 1);
+            int firstDay = tmp.get(Calendar.DAY_OF_WEEK) - 1; // 0=周日
+            int maxDay = tmp.getActualMaximum(Calendar.DAY_OF_MONTH);
+
+            boolean isSelectedMonth = cal.get(Calendar.YEAR) == selectedYear
+                                   && cal.get(Calendar.MONTH) == selectedMonth;
+
+            for (int i = 0; i < firstDay; i++) grid.add(new JLabel());
+
+            for (int day = 1; day <= maxDay; day++) {
+                JButton dayBtn = new JButton(String.valueOf(day));
+                dayBtn.setMargin(new Insets(0, 2, 0, 2));
+                if (isSelectedMonth && day == selectedDay) {
+                    dayBtn.setBackground(new Color(0x2675BF));
+                    dayBtn.setForeground(Color.WHITE);
+                    dayBtn.setFont(dayBtn.getFont().deriveFont(Font.BOLD));
+                    dayBtn.setOpaque(true);
+                    dayBtn.setBorderPainted(false);
+                }
+                int d = day;
+                dayBtn.addActionListener(ev -> {
+                    cal.set(Calendar.DAY_OF_MONTH, d);
+                    dateField.setText(new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime()));
+                    dialog.dispose();
+                    performAnalysis();
+                });
+                grid.add(dayBtn);
+            }
+            dialog.pack();
+        };
+
+        prevBtn.addActionListener(e -> { cal.add(Calendar.MONTH, -1); refresh.run(); });
+        nextBtn.addActionListener(e -> { cal.add(Calendar.MONTH, 1); refresh.run(); });
+
+        dialog.add(navPanel, BorderLayout.NORTH);
+        dialog.add(grid, BorderLayout.CENTER);
+        refresh.run();
+        dialog.setLocationRelativeTo(dateField);
+        dialog.setVisible(true);
+    }
+
+    private void showPathChooser() {
+        String basePath = project.getBasePath();
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+        chooser.setDialogTitle("选择 SVN 路径");
+        if (basePath != null) {
+            java.io.File currentDir = new java.io.File(basePath, pathField.getText().trim());
+            if (currentDir.exists()) {
+                chooser.setCurrentDirectory(currentDir);
+            } else {
+                chooser.setCurrentDirectory(new java.io.File(basePath));
+            }
+        }
+        if (chooser.showOpenDialog(pathField) == JFileChooser.APPROVE_OPTION) {
+            java.io.File selected = chooser.getSelectedFile();
+            if (basePath != null) {
+                String relative = selected.getAbsolutePath()
+                        .replace('\\', '/')
+                        .replace(basePath.replace('\\', '/'), "")
+                        .replaceFirst("^/+", "");
+                pathField.setText(relative.isEmpty() ? "." : relative);
+            } else {
+                pathField.setText(selected.getAbsolutePath());
+            }
+            performAnalysis();
+        }
     }
 
     public JComponent getContent() {
-        JPanel root = new JPanel();
-        root.setLayout(new BoxLayout(root, BoxLayout.Y_AXIS));
+        JPanel root = new JPanel(new BorderLayout(0, 3));
 
         // ---- 输入区域 ----
-        JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        inputPanel.add(new JLabel("基准日期:"));
-        inputPanel.add(dateField);
-        inputPanel.add(Box.createHorizontalStrut(10));
-        inputPanel.add(new JLabel("SVN路径:"));
-        inputPanel.add(pathField);
-        inputPanel.add(Box.createHorizontalStrut(10));
-        inputPanel.add(analyzeButton);
+        JPanel inputPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(2, 3, 2, 3);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.NONE;
+
+        // Row 0: [基准日期:] [dateField+📅 ...fill...]
+        gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        inputPanel.add(new JLabel("基准日期:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        inputPanel.add(datePanel, gbc);
+
+        // Row 1: [SVN路径:] [pathField ...stretch...]
+        gbc.gridy = 1;
+        gbc.gridx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        gbc.insets = new Insets(2, 3, 2, 3);
+        inputPanel.add(new JLabel("SVN路径:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        inputPanel.add(pathPanel, gbc);
+
+        // Row 2: [分析变更]
+        gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.weightx = 0;
+        gbc.insets = new Insets(2, 3, 2, 3);
+        inputPanel.add(analyzeButton, gbc);
 
         // ---- 结果表格 ----
         JBScrollPane scrollPane = new JBScrollPane(resultTable);
 
         // ---- 状态栏 ----
-        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
-        statusPanel.add(statusLabel);
+        JBScrollPane statusScrollPane = new JBScrollPane(statusArea);
+        statusScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        statusScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        statusScrollPane.setPreferredSize(new Dimension(0, 320));
+        statusScrollPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, 700));
+        statusScrollPane.setBorder(BorderFactory.createEmptyBorder());
 
-        root.add(inputPanel);
-        root.add(Box.createVerticalStrut(5));
-        root.add(scrollPane);
-        root.add(Box.createVerticalStrut(3));
-        root.add(statusPanel);
+        root.add(inputPanel, BorderLayout.NORTH);
+        root.add(scrollPane, BorderLayout.CENTER);
+        root.add(statusScrollPane, BorderLayout.SOUTH);
 
         SimpleToolWindowPanel panel = new SimpleToolWindowPanel(true, false);
         panel.setContent(root);
@@ -118,7 +315,7 @@ public class SvnChangeAnalysisToolWindowUI {
         }
 
         tableModel.setRowCount(0);
-        statusLabel.setText("分析中...");
+        statusArea.setText("分析中...");
         analyzeButton.setEnabled(false);
 
         new Thread(() -> {
@@ -169,13 +366,14 @@ public class SvnChangeAnalysisToolWindowUI {
                 for (Map.Entry<String, Integer> entry : moduleFileCount.entrySet()) {
                     String module = entry.getKey();
                     int count = entry.getValue();
-                    String[] timeRange = getModuleTimeRange(basePath, date, svnPath + module);
+                    String normalizedPath = svnPath.replaceAll("/+$", "") + "/" + module;
+                    String[] timeRange = getModuleTimeRange(basePath, date, normalizedPath);
                     rows.add(new Object[]{module, count, timeRange[0], timeRange[1]});
 
                     completed++;
                     final int progress = completed;
                     SwingUtilities.invokeLater(() ->
-                            statusLabel.setText("分析中... (" + progress + "/" + moduleFileCount.size() + ")"));
+                            statusArea.setText("分析中... (" + progress + "/" + moduleFileCount.size() + ")"));
                 }
 
                 // Step 3: 按文件数降序排序后更新UI
@@ -185,8 +383,13 @@ public class SvnChangeAnalysisToolWindowUI {
                     for (Object[] row : rows) {
                         tableModel.addRow(row);
                     }
-                    statusLabel.setText("完成 - 共 " + rows.size() + " 个模块有变更");
+                    StringBuilder modules = new StringBuilder();
+                    for (Object[] row : rows) {
+                        modules.append('\n').append(row[0]);
+                    }
+                    statusArea.setText("完成 - 共 " + rows.size() + " 个模块有变更" + modules);
                     analyzeButton.setEnabled(true);
+                    autoResizeColumns();
                 });
 
             } catch (Exception e) {
@@ -244,9 +447,34 @@ public class SvnChangeAnalysisToolWindowUI {
         return new String[]{earliest, latest};
     }
 
+    private void autoResizeColumns() {
+        FontMetrics fm = resultTable.getFontMetrics(resultTable.getFont());
+        int tableWidth = resultTable.getParent().getWidth();
+        // 固定列数
+        resultTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+
+        for (int col = 0; col < resultTable.getColumnCount(); col++) {
+            int maxWidth = fm.stringWidth(resultTable.getColumnName(col)) + 20;
+
+            for (int row = 0; row < resultTable.getRowCount(); row++) {
+                Object val = resultTable.getValueAt(row, col);
+                if (val != null) {
+                    int w = fm.stringWidth(val.toString()) + 20;
+                    if (w > maxWidth) maxWidth = w;
+                }
+            }
+
+            // 限制最大宽度，留空间给其他列
+            int limit = tableWidth - (resultTable.getColumnCount() - col) * 60;
+            if (maxWidth > limit) maxWidth = Math.max(limit, 80);
+
+            resultTable.getColumnModel().getColumn(col).setPreferredWidth(maxWidth);
+        }
+    }
+
     private void updateStatus(String msg, boolean isError) {
         SwingUtilities.invokeLater(() -> {
-            statusLabel.setText(msg);
+            statusArea.setText(msg);
             analyzeButton.setEnabled(true);
             if (isError) {
                 MyPluginMessages.showError("SVN 变更分析", msg, project);
