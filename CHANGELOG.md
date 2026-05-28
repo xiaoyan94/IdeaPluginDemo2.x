@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-05-28
+
+- 新增 SVN 变更分析工具窗口，可按基准日期和路径分析各模块的文件变更数量及提交时间范围
+- 日期输入支持手写输入与日历选择框，选中日期高亮回显
+- 路径输入支持手写输入与目录选择框
+- 分析结果表格支持单元格选中复制（Ctrl+C），列宽自适应内容
+- 状态栏支持文本选中复制，模块名换行展示
+- 输入区采用响应式网格布局，窄窗口下控件不被压缩
+
 ## [2.0.5] - 2026-03-27
 
 OneClickNavication2.X测试版：
@@ -66,7 +75,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.5...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.6...HEAD
+[2.0.6]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.4-alpha.2...v2.0.5
 [2.0.4-alpha.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.4-alpha.1...v2.0.4-alpha.2
 [2.0.4-alpha.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v0.0.4...v2.0.4-alpha.1
