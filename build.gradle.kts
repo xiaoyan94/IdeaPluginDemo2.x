@@ -32,6 +32,8 @@ sourceSets {
 
 // Configure project's dependencies
 repositories {
+    maven("https://maven.aliyun.com/repository/public")
+
     mavenCentral()
 
     // IntelliJ Platform Gradle Plugin Repositories Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-repositories-extension.html
