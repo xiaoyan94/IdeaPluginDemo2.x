@@ -350,6 +350,32 @@
                     group-id="FileMenu"
                     anchor="first"/>
         </action>
+
+        <!--
+            挂载到 Services 窗口右键菜单。
+            RunDashboardContentPopupGroup 是 Services 面板节点的 context menu，
+            自 2019.3 起稳定存在（Services 窗口由 Run Dashboard 演进而来，Group ID 未变）。
+        -->
+        <action id="com.zhiyin.plugins.actions.AddVmOptionsAction"
+                class="com.zhiyin.plugins.actions.AddVmOptionsAction"
+                text="Edit VM Options..."
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="编辑此运行配置的 JVM 启动参数">
+            <add-to-group group-id="ServiceViewItemPopup" anchor="last"/>
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>
+
+        <!--
+            同时挂到 Run 配置下拉的上下文菜单，作为兜底入口。
+            这样即使 Services 面板路径有问题，用户仍可通过 Run 工具栏操作。
+        -->
+        <action id="com.zhiyin.plugins.actions.AddVmOptionsAction.RunMenu"
+                class="com.zhiyin.plugins.actions.AddVmOptionsAction"
+                text="Edit VM Options..."
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="编辑此运行配置的 JVM 启动参数">
+            <add-to-group group-id="RunContextPopupGroup" anchor="last"/>
+        </action>
     </actions>
 
     <projectListeners>
