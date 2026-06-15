@@ -143,36 +143,33 @@
     </extensions>
 
     <actions>
-        <group id="com.zhiyin.plugins.ToolsMenuGroup" text="OneClickNavigation插件" popup="true"
-               description="OneClickNavigation tools" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+        <group id="com.zhiyin.plugins.ToolsMenuGroup" popup="true"
+               icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="ToolsMenu" anchor="first"/>
 
             <action id="ZYPlugin.ClearTranslationCache" class="com.zhiyin.plugins.actions.ClearTranslationCacheAction"
-                    text="清空翻译缓存" description="Clear translation cache" icon="AllIcons.Actions.Refresh"/>
+                    icon="AllIcons.Actions.Refresh"/>
 
-            <action id="ZYPlugin.TestTranslate" class="com.zhiyin.plugins.actions.TranslateTestAction" text="测试翻译"
-                    description="Test translate" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16"/>
+            <action id="ZYPlugin.TestTranslate" class="com.zhiyin.plugins.actions.TranslateTestAction"
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16"/>
 
-            <action id="com.zhiyin.plugins.actions.TestCredentialAction" class="com.zhiyin.plugins.actions.TestCredentialAction"
-                    text="测试保存密码凭证">
+            <action id="com.zhiyin.plugins.actions.TestCredentialAction" class="com.zhiyin.plugins.actions.TestCredentialAction">
             </action>
 
             <action id="com.zhiyin.plugins.actions.ShowLanguageAction" class="com.zhiyin.plugins.actions.ShowLanguageAction"
-                    text="查看当前文件Language信息" icon="AllIcons.General.Information">
+                    icon="AllIcons.General.Information">
             </action>
         </group>
 
         <action id="com.zhiyin.plugins.actions.testAction"
                 icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                class="com.zhiyin.plugins.actions.ReloadXmlFileCacheMapAction" text="刷新数据"
-                description="Refresh cache map">
+                class="com.zhiyin.plugins.actions.ReloadXmlFileCacheMapAction">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="first"/>
         </action>
 
         <action id="com.zhiyin.plugins.actions.GenerateDictAction"
                 icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                class="com.zhiyin.plugins.actions.GenerateDictAction" text="生成用户字典"
-                description="Generate Dict">
+                class="com.zhiyin.plugins.actions.GenerateDictAction">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="first"/>
         </action>
 
@@ -183,37 +180,27 @@
 
             <action id="com.zhiyin.plugins.actions.ConvertToCDATAAction"
                     icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    class="com.zhiyin.plugins.actions.ConvertToCDATAAction"
-                    text="转换为CDATA块"
-                    description="XML：将所选文本转换为 CDATA 块"/>
+                    class="com.zhiyin.plugins.actions.ConvertToCDATAAction"/>
 
             <action id="com.zhiyin.plugins.actions.CopySelectedSqlAction"
                     class="com.zhiyin.plugins.actions.CopySelectedSqlAction"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    text="复制格式化后的SQL"
-                    description="复制可执行SQL（自动替换language、移除标签、移除行首空白）">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
                 <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="com.zhiyin.plugins.actions.ConvertToCDATAAction"/>
             </action>
 
             <action id="com.zhiyin.plugins.actions.ImportMapperXMLSortColumnAction"
                     icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    class="com.zhiyin.plugins.actions.ImportMapperXMLSortColumnAction"
-                    text="排序column字段"
-                    description="Import mapper: 根据column顺序一键排序col字段值">
+                    class="com.zhiyin.plugins.actions.ImportMapperXMLSortColumnAction">
             </action>
 
             <action id="com.zhiyin.plugins.actions.OpenClassFileAction"
                     class="com.zhiyin.plugins.actions.OpenClassFileAction"
-                    text="打开class文件"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    description="Opens the corresponding .class file for the current Java file">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             </action>
 
             <action id="com.zhiyin.plugins.actions.FindControllerByFeignUrlAction"
                     class="com.zhiyin.plugins.actions.FindControllerByFeignUrlAction"
-                    text="Find by URL"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    description="FindControllerByFeignUrlAction">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             </action>
 
 <!--            <action id="com.zhiyin.plugins.actions.FindFeignByControllerUrlAction"
@@ -225,58 +212,46 @@
 
             <action id="com.zhiyin.plugins.actions.GoToLayoutXmlAction"
                     class="com.zhiyin.plugins.actions.GoToLayoutXmlAction"
-                    text="Layout &lt;--> HTML"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    description="Guess layout file">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             </action>
 
             <action id="com.zhiyin.plugins.actions.InsertJSI18nFuncAction"
                     class="com.zhiyin.plugins.actions.InsertJSI18nFuncAction"
-                    text="JavaScript: 自动翻译并插入资源串函数"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    description="JavaScript中插入zhiyin.i18n.translate函数;">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             </action>
 
             <action id="com.zhiyin.plugins.actions.InsertJavaI18nFuncAction"
                     class="com.zhiyin.plugins.actions.InsertJavaI18nFuncAction"
-                    text="Java: 自动翻译并插入资源串函数"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    description="Java中插入I18n函数;">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             </action>
 
             <action id="com.zhiyin.plugins.actions.InsertFreeMarkerI18nDirectiveAction"
                     class="com.zhiyin.plugins.actions.InsertFreeMarkerI18nDirectiveAction"
-                    text="FreeMarker/JSP: 插入message指令/标签"
-                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                    description="FreeMarker中插入&lt;@message指令; JSP中插入&lt;mes:message标签">
+                    icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             </action>
         </group>
 
         <action id="com.zhiyin.plugins.actions.SearchWithBaiduAction"
                 class="com.zhiyin.plugins.actions.SearchWithBaiduAction"
-                icon="com.zhiyin.plugins.resources.MyIcons.baiduIcon"
-                text="百度搜索" description="Baidu:百度一下">
+                icon="com.zhiyin.plugins.resources.MyIcons.baiduIcon">
             <add-to-group group-id="com.zhiyin.plugins.EditorPopupMenu" anchor="first"/>
             <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
         </action>
         <action id="com.zhiyin.plugins.actions.SvnChangeAnalysisAction"
-                class="com.zhiyin.plugins.actions.SvnChangeAnalysisAction" text="SVN 变更分析"
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="分析各模块的 SVN 文件变更数量和提交时间范围">
+                class="com.zhiyin.plugins.actions.SvnChangeAnalysisAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
 
         <action id="com.zhiyin.plugins.actions.SvnCommitLogAnalysisAction"
-                class="com.zhiyin.plugins.actions.SvnCommitLogAnalysisAction" text="SVN 提交日志深度分析"
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="按日期和人员筛选SVN提交记录，统计分析并生成结构化Prompt">
+                class="com.zhiyin.plugins.actions.SvnCommitLogAnalysisAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
 
         <action id="com.zhiyin.plugins.actions.ProjectTypeCheckAction"
-                class="com.zhiyin.plugins.actions.ProjectTypeCheckAction" text="当前项目类型"
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="Print：测试当前项目类型">
+                class="com.zhiyin.plugins.actions.ProjectTypeCheckAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
         <!--<action id="com.zhiyin.plugins.actions.codeGenerator.GenerateXmlAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
@@ -285,8 +260,7 @@
             <add-to-group group-id="ProjectViewPopupMenu" anchor="first"/>
         </action>-->
         <action id="com.zhiyin.plugins.actions.codeGenerator.DataModelGeneratorAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                class="com.zhiyin.plugins.actions.codeGenerator.DataModelGeneratorAction" text="模型代码生成器"
-                description="Moc、Layout、Controller、Service、Dao、MyBatis mapper一键生成">
+                class="com.zhiyin.plugins.actions.codeGenerator.DataModelGeneratorAction">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="first"/>
         </action>
         <!--<action id="com.zhiyin.plugins.actions.CollectUrlsAction" class="com.zhiyin.plugins.actions.CollectUrlsAction"
@@ -294,20 +268,17 @@
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>-->
         <action id="com.zhiyin.plugins.actions.EfficientSearchXmlTagAction"
-                class="com.zhiyin.plugins.actions.EfficientSearchXmlTagAction" text="TestAction"
-                description="To test sth.">
+                class="com.zhiyin.plugins.actions.EfficientSearchXmlTagAction">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="after"
                           relative-to-action="com.zhiyin.plugins.actions.CollectUrlsAction"/>
         </action>
-        <action id="com.zhiyin.plugins.actions.MybatisLogSQLAction" class="com.zhiyin.plugins.actions.MybatisLogSQLAction" text="提取SQL语句" description="Sql from Mybatis log" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+        <action id="com.zhiyin.plugins.actions.MybatisLogSQLAction" class="com.zhiyin.plugins.actions.MybatisLogSQLAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
         </action>
 
         <action id="GenerateExcelHeader"
                 class="com.zhiyin.plugins.actions.GenerateExcelHeaderAction"
-                text="一键生成导入模板 Excel"
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="根据 column 标签生成 Excel ">
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
 
@@ -332,18 +303,14 @@
 
         <action id="com.zhiyin.plugins.microservices.CollectControllersAction"
                 class="com.zhiyin.plugins.microservices.CollectControllersAction"
-                text="Collect Microservice Controllers"
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="Scan project controllers and build URL -> method mapping cache">
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
 
         <action
                 id="AutoTranslateAction"
                 class="com.zhiyin.plugins.actions.AutoTranslateAction"
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                text="AutoTranslate"
-                description="自动生成多语言资源键值">
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
 
             <!-- 项目视图中的资源文件右键菜单 -->
             <add-to-group
@@ -368,9 +335,7 @@
         -->
         <action id="com.zhiyin.plugins.actions.AddVmOptionsAction"
                 class="com.zhiyin.plugins.actions.AddVmOptionsAction"
-                text="Edit VM Options..."
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="编辑此运行配置的 JVM 启动参数">
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="ServiceViewItemPopup" anchor="last"/>
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
@@ -381,9 +346,7 @@
         -->
         <action id="com.zhiyin.plugins.actions.AddVmOptionsAction.RunMenu"
                 class="com.zhiyin.plugins.actions.AddVmOptionsAction"
-                text="Edit VM Options..."
-                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                description="编辑此运行配置的 JVM 启动参数">
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="RunContextPopupGroup" anchor="last"/>
         </action>
     </actions>

@@ -64,7 +64,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JProgressBar progressBar = new JProgressBar();
 
     // ---- 提交记录表格 ----
-    private final String[] logColumnNames = {"版本号", "项目", "作者", "日期", "消息摘要", "变更文件数"};
+    private final String[] logColumnNames = {"版本号", "项目", "作者", "日期", "消息摘要", "变更文件数", "代码量"};
     private final DefaultTableModel logTableModel = new DefaultTableModel(logColumnNames, 0) {
         @Override
         public boolean isCellEditable(int row, int column) { return false; }
@@ -72,7 +72,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JBTable logTable = new JBTable(logTableModel);
 
     // ---- 统计表格 ----
-    private final String[] statColumnNames = {"作者", "项目", "提交次数", "变更文件总数", "占比"};
+    private final String[] statColumnNames = {"作者", "项目", "提交次数", "变更文件总数", "代码量", "占比"};
     private final DefaultTableModel statTableModel = new DefaultTableModel(statColumnNames, 0) {
         @Override
         public boolean isCellEditable(int row, int column) { return false; }
@@ -110,6 +110,18 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
     private static final SimpleDateFormat DATE_FMT = new SimpleDateFormat("yyyy-MM-dd");
     private static final SimpleDateFormat SVN_DATE_FMT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+    /** 将 yyyy-MM-dd 格式的日期字符串加一天后返回 */
+    private static String addOneDay(String dateStr) {
+        try {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.setTime(DATE_FMT.parse(dateStr));
+            cal.add(java.util.Calendar.DAY_OF_MONTH, 1);
+            return DATE_FMT.format(cal.getTime());
+        } catch (ParseException e) {
+            return dateStr; // 解析失败则原样返回
+        }
+    }
 
     public SvnCommitLogAnalysisToolWindowUI(Project project, ToolWindow toolWindow) {
         this.project = project;
@@ -292,13 +304,14 @@ public class SvnCommitLogAnalysisToolWindowUI {
     // ================================================================
 
     private JComponent buildLogTablePanel() {
-        // 设置列宽：版本号/项目/作者 窄列，日期 中列，消息摘要 宽列，变更文件数 窄列
+        // 设置列宽：版本号/项目/作者 窄列，日期 中列，消息摘要 宽列，变更文件数/代码量 窄列
         logTable.getColumnModel().getColumn(0).setPreferredWidth(65);   // 版本号
         logTable.getColumnModel().getColumn(1).setPreferredWidth(80);   // 项目
         logTable.getColumnModel().getColumn(2).setPreferredWidth(70);   // 作者
         logTable.getColumnModel().getColumn(3).setPreferredWidth(125);  // 日期
-        logTable.getColumnModel().getColumn(4).setPreferredWidth(390);  // 消息摘要 - 宽列
+        logTable.getColumnModel().getColumn(4).setPreferredWidth(370);  // 消息摘要 - 宽列（缩减20px给代码量列）
         logTable.getColumnModel().getColumn(5).setPreferredWidth(65);   // 变更文件数
+        logTable.getColumnModel().getColumn(6).setPreferredWidth(65);   // 代码量
 
         // 消息摘要列使用 JTextArea 渲染器，支持自动换行显示完整内容
         logTable.getColumnModel().getColumn(4).setCellRenderer(new TableCellRenderer() {
@@ -699,32 +712,105 @@ public class SvnCommitLogAnalysisToolWindowUI {
                             : allRecords;
 
                     if (indicator.isCanceled()) return;
-                    indicator.setText("正在统计分析...");
-                    indicator.setFraction(0.8);
 
-                    // Step 3: 统计分析
+                    // Step 3: 计算代码量（svn diff）
+                    indicator.setText("正在统计代码量...");
+                    indicator.setFraction(0.68f);
+
+                    // 构建项目名→路径映射
+                    Map<String, String> projectNameToPath = new LinkedHashMap<>();
+                    for (ProjectConfig cfg : configs) {
+                        projectNameToPath.put(cfg.name, cfg.path);
+                    }
+                    // 统计每个提交的代码量
+                    int totalCodeVolume = 0;
+                    int commitsWithCode = 0;
+                    int diffFailures = 0;
+                    int checkedCommits = 0; // 有匹配文件的提交数
+                    for (int i = 0; i < filteredRecords.size(); i++) {
+                        if (indicator.isCanceled()) return;
+                        SvnCommitRecord r = filteredRecords.get(i);
+                        if (i % Math.max(1, filteredRecords.size() / 20) == 0) {
+                            indicator.setFraction(0.68f + 0.07f * i / Math.max(1, filteredRecords.size()));
+                            indicator.setText("正在统计代码量... " + (i + 1) + "/" + filteredRecords.size());
+                        }
+                        // 先快速检查是否有匹配的文件变更
+                        String workDir = projectNameToPath.get(r.projectName);
+                        if (workDir == null) {
+                            // 兼容旧数据：没有项目名对应路径的跳过
+                            workDir = projectNameToPath.get("当前项目");
+                        }
+                        if (workDir == null) continue;
+
+                        boolean hasMatchingFile = false;
+                        for (String cp : r.changedPaths) {
+                            // changedPaths 格式: "M /trunk/src/File.java"（action + space + path）
+                            String filePath = cp.contains(" ") ? cp.substring(cp.indexOf(' ') + 1) : cp;
+                            if (matchesCodeVolumePattern(filePath)) {
+                                hasMatchingFile = true;
+                                break;
+                            }
+                        }
+                        if (hasMatchingFile) {
+                            checkedCommits++;
+                            try {
+                                int vol = computeCommitCodeVolume(workDir,
+                                        r.revision.startsWith("r") ? r.revision.substring(1) : r.revision,
+                                        indicator);
+                                r.codeVolume = Math.max(0, vol); // -1 视为 0（diff 失败）
+                                if (vol > 0) {
+                                    totalCodeVolume += vol;
+                                    commitsWithCode++;
+                                } else if (vol < 0) {
+                                    diffFailures++;
+                                }
+                            } catch (Exception e) {
+                                diffFailures++; // 异常也视为 diff 失败
+                            }
+                        }
+                    }
+
+                    if (indicator.isCanceled()) return;
+                    indicator.setText("正在统计分析...");
+                    indicator.setFraction(0.80f);
+
+                    // Step 4: 统计分析
                     commitRecords = filteredRecords;
                     authorStatsMap = computeAuthorStats(filteredRecords);
 
-                    // 构建堆叠图表数据：每个作者 → 每个项目的提交次数
-                    final Map<String, Map<String, Integer>> stackedChartData = computeStackedChartData(filteredRecords);
-                    // 构建每个项目的独立图表数据
-                    final Map<String, Map<String, Integer>> perProjectChartData = computePerProjectChartData(filteredRecords);
+                    // 构建两种指标的图表数据（提交次数 + 代码量）
+                    final Map<String, Map<String, Integer>> stackedByCommits = computeStackedChartData(filteredRecords, false);
+                    final Map<String, Map<String, Integer>> stackedByVolume = computeStackedChartData(filteredRecords, true);
+                    final Map<String, Map<String, Integer>> projectByCommits = computePerProjectChartData(filteredRecords, false);
+                    final Map<String, Map<String, Integer>> projectByVolume = computePerProjectChartData(filteredRecords, true);
 
                     if (indicator.isCanceled()) return;
                     indicator.setText("正在更新界面...");
                     indicator.setFraction(0.95);
 
-                    // Step 4: 更新 UI（必须在 EDT 线程）
-                    final String statusMsg = String.format("完成 - %d 个项目，共 %d 条提交记录，%d 位作者",
-                            configs.size(), filteredRecords.size(), authorStatsMap.size());
+                    // Step 5: 更新 UI（必须在 EDT 线程）
+                    final String statusMsg;
+                    if (diffFailures > 0 && diffFailures == checkedCommits) {
+                        statusMsg = String.format(
+                                "完成 - %d 个项目，共 %d 条记录 | 代码量统计全部失败(%d/%d)，请检查 SVN 工作目录是否有效",
+                                configs.size(), filteredRecords.size(), diffFailures, checkedCommits);
+                    } else if (diffFailures > 0) {
+                        statusMsg = String.format(
+                                "完成 - %d 个项目，共 %d 条记录 | 代码量: %d 行 (%d/%d 成功, %d 失败)",
+                                configs.size(), filteredRecords.size(), totalCodeVolume,
+                                commitsWithCode, checkedCommits, diffFailures);
+                    } else {
+                        statusMsg = String.format(
+                                "完成 - %d 个项目，共 %d 条记录，%d 位作者 | 代码量: %d 行 (%d 次提交)",
+                                configs.size(), filteredRecords.size(), authorStatsMap.size(),
+                                totalCodeVolume, commitsWithCode);
+                    }
                     ApplicationManager.getApplication().invokeLater(() -> {
                         displayedRecords = commitRecords;
                         displayedStats = authorStatsMap;
                         updateLogTable(filteredRecords);
                         updateStatsTable(authorStatsMap);
-                        chartPanel.setStackedData(stackedChartData);
-                        chartPanel.setProjectTabs(perProjectChartData);
+                        chartPanel.setAllData(stackedByCommits, stackedByVolume, projectByCommits, projectByVolume);
                         refreshAuthorCombo();
                         refreshPrompt();
                         updateUIStatus(statusMsg, false);
@@ -771,11 +857,14 @@ public class SvnCommitLogAnalysisToolWindowUI {
                                                ProgressIndicator indicator) throws Exception {
         List<SvnCommitRecord> records = new ArrayList<>();
 
-        // svn log -r {start}:{end} --xml -v
+        // svn log -r {start}:{end+1day} --xml -v
+        // SVN 的 {date} 语法将日期视为当天 00:00:00，因此 {2026-06-15}:{2026-06-15} 范围为零。
+        // 将 endDate 加一天，使得它能覆盖用户选择的结束日期全天。
         // 使用 --xml 格式便于可靠解析
+        String svnEndDate = addOneDay(endDate);
         ProcessBuilder pb = new ProcessBuilder(
                 "svn", "log",
-                "-r", "{" + startDate + "}:{" + endDate + "}",
+                "-r", "{" + startDate + "}:{" + svnEndDate + "}",
                 "--xml", "-v"
         );
         pb.directory(new java.io.File(workDir));
@@ -900,6 +989,102 @@ public class SvnCommitLogAnalysisToolWindowUI {
     }
 
     // ================================================================
+    //  代码量统计（svn diff 解析）
+    // ================================================================
+
+    /** 判断文件路径是否匹配代码量统计范围 */
+    private static boolean matchesCodeVolumePattern(String path) {
+        // 排除 components 目录
+        if (path.contains("/components/") || path.contains("\\components\\")) return false;
+        // 包含 **/*.java
+        if (path.endsWith(".java")) return true;
+        // 包含 **/*Mapper.xml
+        if (path.endsWith("Mapper.xml")) return true;
+        return false;
+    }
+
+    /**
+     * 对单次提交执行 svn diff 并统计匹配文件的新增代码行数
+     * <p>
+     * 只统计新增行（+开头且非 +++），不统计删除行（-开头），符合业界惯例。
+     * 跳过空新增行（仅有 + 号无实质内容）。
+     * </p>
+     * @return 新增代码行数，失败返回 -1（需与 0 区分，0=无匹配文件的提交）
+     */
+    private int computeCommitCodeVolume(String workDir, String revision, ProgressIndicator indicator) throws Exception {
+        // svn diff -c {revision}
+        // 注意：不传 --ignore-properties，因为某些旧版 SVN 不支持会导致全部失败
+        ProcessBuilder pb = new ProcessBuilder("svn", "diff", "-c", revision);
+        pb.directory(new java.io.File(workDir));
+        pb.redirectErrorStream(true);
+
+        Process process = pb.start();
+
+        // ★ 关键修复：必须在 waitFor 之前启动独立线程消费输出流，
+        //    否则大 diff 的输出缓冲区会填满导致进程死锁 → 超时 → 返回 0
+        StringBuilder output = new StringBuilder();
+        AtomicBoolean readDone = new AtomicBoolean(false);
+
+        Thread readerThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            } catch (Exception ignored) {
+                // 进程被 destroyForcibly 时流中断属正常情况
+            }
+            readDone.set(true);
+        }, "svn-diff-reader-" + revision);
+        readerThread.setDaemon(true);
+        readerThread.start();
+
+        // 等待进程结束（不再死锁，因为输出已被消费）
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            return -1; // 超时
+        }
+
+        // 等待读线程结束
+        try { readerThread.join(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+
+        if (process.exitValue() != 0) return -1; // SVN 命令执行失败
+
+        // 解析 diff 输出
+        int addedLines = 0;
+        boolean inMatchingFile = false;
+
+        for (String line : output.toString().split("\n")) {
+            if (indicator.isCanceled()) return -1;
+
+            // Index: 行标记文件开始
+            if (line.startsWith("Index: ")) {
+                String filePath = line.substring(7).trim();
+                inMatchingFile = matchesCodeVolumePattern(filePath);
+            } else if (inMatchingFile) {
+                // 跳过 diff 元信息行
+                if (line.startsWith("===") || line.startsWith("---")
+                        || line.startsWith("+++") || line.startsWith("@@")) {
+                    continue;
+                }
+                // 跳过属性变更头部（Property changes on: / Modified: 等）
+                if (line.startsWith("Property changes on:") || line.startsWith("Modified:")
+                        || line.startsWith("Added:") || line.startsWith("Deleted:")
+                        || line.startsWith("___")) {
+                    continue;
+                }
+                // 只统计新增行（+开头），跳过纯 + 号空行
+                if (line.startsWith("+") && line.length() > 1) {
+                    addedLines++;
+                }
+            }
+        }
+        return addedLines;
+    }
+
+    // ================================================================
     //  统计分析
     // ================================================================
 
@@ -910,6 +1095,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
             AuthorStats stats = map.computeIfAbsent(r.author, k -> new AuthorStats(k));
             stats.commitCount++;
             stats.totalChangedFiles += r.changedFileCount;
+            stats.totalCodeVolume += r.codeVolume;
             if (r.projectName != null && !r.projectName.isEmpty()) {
                 stats.projectNames.add(r.projectName);
             }
@@ -928,18 +1114,18 @@ public class SvnCommitLogAnalysisToolWindowUI {
         return sortedMap;
     }
 
-    private Map<String, Integer> toChartData(Map<String, AuthorStats> statsMap) {
+    private Map<String, Integer> toChartData(Map<String, AuthorStats> statsMap, boolean useVolume) {
         Map<String, Integer> data = new LinkedHashMap<>();
         for (Map.Entry<String, AuthorStats> e : statsMap.entrySet()) {
-            data.put(e.getKey(), e.getValue().commitCount);
+            data.put(e.getKey(), useVolume ? e.getValue().totalCodeVolume : e.getValue().commitCount);
         }
         return data;
     }
 
     /**
-     * 构建堆叠图表数据：每个作者 → 每个项目 → 提交次数
+     * 构建堆叠图表数据：每个作者 → 每个项目 → 值（提交次数或代码量）
      */
-    private Map<String, Map<String, Integer>> computeStackedChartData(List<SvnCommitRecord> records) {
+    private Map<String, Map<String, Integer>> computeStackedChartData(List<SvnCommitRecord> records, boolean useVolume) {
         // 按作者排序
         Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
         // 先收集所有作者
@@ -954,7 +1140,8 @@ public class SvnCommitLogAnalysisToolWindowUI {
             for (SvnCommitRecord r : records) {
                 if (r.author.equals(author)) {
                     String pn = r.projectName != null && !r.projectName.isEmpty() ? r.projectName : "未知";
-                    projectCounts.merge(pn, 1, Integer::sum);
+                    int value = useVolume ? r.codeVolume : 1;
+                    projectCounts.merge(pn, value, Integer::sum);
                 }
             }
             result.put(author, projectCounts);
@@ -963,17 +1150,18 @@ public class SvnCommitLogAnalysisToolWindowUI {
     }
 
     /**
-     * 构建每个项目的独立图表数据：项目名 → 作者 → 提交次数
+     * 构建每个项目的独立图表数据：项目名 → 作者 → 值（提交次数或代码量）
      */
-    private Map<String, Map<String, Integer>> computePerProjectChartData(List<SvnCommitRecord> records) {
+    private Map<String, Map<String, Integer>> computePerProjectChartData(List<SvnCommitRecord> records, boolean useVolume) {
         Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
         // 按项目分组
         for (SvnCommitRecord r : records) {
             String pn = r.projectName != null && !r.projectName.isEmpty() ? r.projectName : "未知";
+            int value = useVolume ? r.codeVolume : 1;
             result.computeIfAbsent(pn, k -> new LinkedHashMap<>())
-                  .merge(r.author, 1, Integer::sum);
+                  .merge(r.author, value, Integer::sum);
         }
-        // 每个项目内部按提交次数降序
+        // 每个项目内部按值降序
         for (Map<String, Integer> authorMap : result.values()) {
             List<Map.Entry<String, Integer>> sorted = new ArrayList<>(authorMap.entrySet());
             sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
@@ -993,7 +1181,8 @@ public class SvnCommitLogAnalysisToolWindowUI {
         logTable.setRowHeight(logTable.getRowHeight());
         for (SvnCommitRecord r : records) {
             logTableModel.addRow(new Object[]{
-                    r.revision, r.projectName, r.author, r.displayDate, r.summary, r.changedFileCount
+                    r.revision, r.projectName, r.author, r.displayDate, r.summary, r.changedFileCount,
+                    r.codeVolume > 0 ? String.valueOf(r.codeVolume) : "-"
             });
         }
     }
@@ -1005,7 +1194,9 @@ public class SvnCommitLogAnalysisToolWindowUI {
             String projects = s.projectNames != null && !s.projectNames.isEmpty()
                     ? String.join(", ", s.projectNames) : "-";
             statTableModel.addRow(new Object[]{
-                    s.author, projects, s.commitCount, s.totalChangedFiles, s.percentage
+                    s.author, projects, s.commitCount, s.totalChangedFiles,
+                    s.totalCodeVolume > 0 ? String.valueOf(s.totalCodeVolume) : "-",
+                    s.percentage
             });
         }
     }
@@ -1057,24 +1248,26 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
         if (includeStatsCheck.isSelected()) {
             sb.append("## 人员统计\n");
-            sb.append("| 作者 | 涉及项目 | 提交次数 | 变更文件总数 | 占比 |\n");
-            sb.append("|------|---------|---------|-------------|------|\n");
+            sb.append("| 作者 | 涉及项目 | 提交次数 | 变更文件总数 | 代码量 | 占比 |\n");
+            sb.append("|------|---------|---------|-------------|--------|------|\n");
             for (AuthorStats s : displayedStats.values()) {
                 String projects = s.projectNames != null && !s.projectNames.isEmpty()
                         ? String.join(", ", s.projectNames) : "-";
-                sb.append(String.format("| %s | %s | %d | %d | %s |\n",
-                        s.author, projects, s.commitCount, s.totalChangedFiles, s.percentage));
+                String volStr = s.totalCodeVolume > 0 ? String.valueOf(s.totalCodeVolume) : "-";
+                sb.append(String.format("| %s | %s | %d | %d | %s | %s |\n",
+                        s.author, projects, s.commitCount, s.totalChangedFiles, volStr, s.percentage));
             }
             sb.append("\n");
         }
 
         sb.append("## 提交记录汇总\n");
         if (includeDetailCheck.isSelected()) {
-            sb.append("| 版本号 | 项目 | 作者 | 日期 | 消息摘要 | 变更文件 |\n");
-            sb.append("|--------|------|------|------|---------|----------|\n");
+            sb.append("| 版本号 | 项目 | 作者 | 日期 | 消息摘要 | 变更文件 | 代码量 |\n");
+            sb.append("|--------|------|------|------|---------|----------|--------|\n");
             for (SvnCommitRecord r : displayedRecords) {
-                sb.append(String.format("| %s | %s | %s | %s | %s | %d |\n",
-                        r.revision, r.projectName, r.author, r.displayDate, r.summary, r.changedFileCount));
+                String volStr = r.codeVolume > 0 ? String.valueOf(r.codeVolume) : "-";
+                sb.append(String.format("| %s | %s | %s | %s | %s | %d | %s |\n",
+                        r.revision, r.projectName, r.author, r.displayDate, r.summary, r.changedFileCount, volStr));
             }
         } else {
             for (SvnCommitRecord r : displayedRecords) {
@@ -1163,10 +1356,11 @@ public class SvnCommitLogAnalysisToolWindowUI {
         displayedRecords = filtered;
         displayedStats = filteredStats;
         updateStatsTable(filteredStats);
-        Map<String, Map<String, Integer>> stackedData = computeStackedChartData(filtered);
-        Map<String, Map<String, Integer>> perProjectData = computePerProjectChartData(filtered);
-        chartPanel.setStackedData(stackedData);
-        chartPanel.setProjectTabs(perProjectData);
+        Map<String, Map<String, Integer>> stackedByCommits = computeStackedChartData(filtered, false);
+        Map<String, Map<String, Integer>> stackedByVolume = computeStackedChartData(filtered, true);
+        Map<String, Map<String, Integer>> projectByCommits = computePerProjectChartData(filtered, false);
+        Map<String, Map<String, Integer>> projectByVolume = computePerProjectChartData(filtered, true);
+        chartPanel.setAllData(stackedByCommits, stackedByVolume, projectByCommits, projectByVolume);
         refreshPrompt();
     }
 
@@ -1310,6 +1504,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
         public final int changedFileCount;
         public final List<String> changedPaths;
         public final String fullMessage;
+        public int codeVolume = 0;  // 代码变更行数（java + Mapper.xml，排除components）
 
         public SvnCommitRecord(String projectName, String revision, String author, String displayDate,
                                String summary, int changedFileCount,
@@ -1329,6 +1524,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
         public final String author;
         public int commitCount = 0;
         public int totalChangedFiles = 0;
+        public int totalCodeVolume = 0;   // 代码变更行数合计
         public String percentage = "0%";
         public final Set<String> projectNames = new LinkedHashSet<>();  // 涉及的多个项目
 
@@ -1349,11 +1545,16 @@ public class SvnCommitLogAnalysisToolWindowUI {
     // ================================================================
 
     static class ChartPanel extends JPanel {
-        private Map<String, Integer> data = Collections.emptyMap();
-        // 堆叠数据：作者 → (项目 → 次数)
-        private Map<String, Map<String, Integer>> stackedData = Collections.emptyMap();
-        // 分项目数据：项目 → (作者 → 次数)
-        private Map<String, Map<String, Integer>> projectData = Collections.emptyMap();
+        // 提交次数版本
+        private Map<String, Map<String, Integer>> stackedDataByCommits = Collections.emptyMap();
+        private Map<String, Map<String, Integer>> projectDataByCommits = Collections.emptyMap();
+        // 代码量版本
+        private Map<String, Map<String, Integer>> stackedDataByVolume = Collections.emptyMap();
+        private Map<String, Map<String, Integer>> projectDataByVolume = Collections.emptyMap();
+        // 当前指标
+        private boolean useVolume = false;
+        private final JComboBox<String> metricCombo = new JComboBox<>(new String[]{"按提交次数", "按代码量"});
+
         // 内部 Tab 面板
         private final JTabbedPane innerTabs = new JTabbedPane();
         // 堆叠图画板
@@ -1369,48 +1570,86 @@ public class SvnCommitLogAnalysisToolWindowUI {
         public ChartPanel() {
             super(new BorderLayout());
             setMinimumSize(new Dimension(200, 150));
+
+            // 顶部：指标选择
+            JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+            topPanel.add(new JLabel("统计指标:"));
+            metricCombo.addActionListener(e -> {
+                useVolume = metricCombo.getSelectedIndex() == 1;
+                applyCurrentMetric();
+            });
+            topPanel.add(metricCombo);
+            add(topPanel, BorderLayout.NORTH);
+
             innerTabs.addTab("汇总(堆叠)", stackedCanvas);
             add(innerTabs, BorderLayout.CENTER);
         }
 
-        /** 兼容旧 API：设置单维度数据 */
-        public void setData(Map<String, Integer> data) {
-            this.data = data;
-            stackedCanvas.setMode(BarCanvas.Mode.SINGLE, data, Collections.emptyMap(), Collections.<String>emptyList());
-            repaint();
+        /** 一次性设置两种指标的数据 */
+        public void setAllData(
+                Map<String, Map<String, Integer>> stackedByCommits,
+                Map<String, Map<String, Integer>> stackedByVolume,
+                Map<String, Map<String, Integer>> projectByCommits,
+                Map<String, Map<String, Integer>> projectByVolume) {
+            this.stackedDataByCommits = stackedByCommits;
+            this.stackedDataByVolume = stackedByVolume;
+            this.projectDataByCommits = projectByCommits;
+            this.projectDataByVolume = projectByVolume;
+            applyCurrentMetric();
         }
 
-        /** 方案 A：设置堆叠柱状图数据 */
+        /** 兼容旧 API：设置堆叠柱状图数据 */
         public void setStackedData(Map<String, Map<String, Integer>> stackedData) {
-            this.stackedData = stackedData;
-            // 转为单维度的作者→总次数
-            Map<String, Integer> authorTotals = new LinkedHashMap<>();
-            for (Map.Entry<String, Map<String, Integer>> e : stackedData.entrySet()) {
-                authorTotals.put(e.getKey(), e.getValue().values().stream().mapToInt(Integer::intValue).sum());
+            this.stackedDataByCommits = stackedData;
+            // 同时作为代码量版本的默认值（未计算代码量时）
+            if (stackedDataByVolume.isEmpty()) {
+                applyCurrentMetric();
             }
-            // 收集所有项目名（按出现顺序）
-            Set<String> projectOrder = new LinkedHashSet<>();
-            for (Map<String, Integer> pm : stackedData.values()) {
-                projectOrder.addAll(pm.keySet());
-            }
-            List<String> projectList = new ArrayList<>(projectOrder);
-            stackedCanvas.setMode(BarCanvas.Mode.STACKED, authorTotals, stackedData, projectList);
-            stackedCanvas.repaint();
         }
 
-        /** 方案 B：设置分项目 Tab */
+        /** 兼容旧 API：设置分项目 Tab */
         public void setProjectTabs(Map<String, Map<String, Integer>> projectData) {
-            this.projectData = projectData;
-            // 保留"汇总(堆叠)"，清除其余 tab
+            this.projectDataByCommits = projectData;
+        }
+
+        /** 根据当前指标刷新图表 */
+        private void applyCurrentMetric() {
+            Map<String, Map<String, Integer>> stacked = useVolume ? stackedDataByVolume : stackedDataByCommits;
+            Map<String, Map<String, Integer>> project = useVolume ? projectDataByVolume : projectDataByCommits;
+            String yLabel = useVolume ? "代码量分布（行）" : "提交次数分布";
+
+            // 更新堆叠图标题
+            stackedCanvas.setYAxisLabel(yLabel);
+
+            // 更新堆叠图
+            if (!stacked.isEmpty()) {
+                Map<String, Integer> authorTotals = new LinkedHashMap<>();
+                for (Map.Entry<String, Map<String, Integer>> e : stacked.entrySet()) {
+                    authorTotals.put(e.getKey(), e.getValue().values().stream().mapToInt(Integer::intValue).sum());
+                }
+                Set<String> projectOrder = new LinkedHashSet<>();
+                for (Map<String, Integer> pm : stacked.values()) {
+                    projectOrder.addAll(pm.keySet());
+                }
+                List<String> projectList = new ArrayList<>(projectOrder);
+                stackedCanvas.setMode(BarCanvas.Mode.STACKED, authorTotals, stacked, projectList);
+            } else {
+                stackedCanvas.setMode(BarCanvas.Mode.SINGLE, Collections.emptyMap(), Collections.emptyMap(), Collections.<String>emptyList());
+            }
+
+            // 更新分项目 Tab（保留"汇总(堆叠)"，清除其余）
             while (innerTabs.getTabCount() > 1) {
                 innerTabs.removeTabAt(innerTabs.getTabCount() - 1);
             }
-            // 为每个项目创建 Tab
-            for (Map.Entry<String, Map<String, Integer>> entry : projectData.entrySet()) {
-                BarCanvas canvas = new BarCanvas();
-                canvas.setMode(BarCanvas.Mode.SINGLE, entry.getValue(), Collections.emptyMap(), Collections.<String>emptyList());
-                innerTabs.addTab(entry.getKey(), canvas);
+            if (!project.isEmpty()) {
+                for (Map.Entry<String, Map<String, Integer>> entry : project.entrySet()) {
+                    BarCanvas canvas = new BarCanvas();
+                    canvas.setYAxisLabel(yLabel);
+                    canvas.setMode(BarCanvas.Mode.SINGLE, entry.getValue(), Collections.emptyMap(), Collections.<String>emptyList());
+                    innerTabs.addTab(entry.getKey(), canvas);
+                }
             }
+            stackedCanvas.repaint();
             innerTabs.repaint();
         }
 
@@ -1447,10 +1686,15 @@ public class SvnCommitLogAnalysisToolWindowUI {
         private Map<String, Integer> data = Collections.emptyMap();
         private Map<String, Map<String, Integer>> stackedData = Collections.emptyMap();
         private List<String> projectOrder = Collections.emptyList();
+        private String yAxisLabel = "提交次数分布";
 
         public BarCanvas() {
             setBackground(UIManager.getColor("Panel.background"));
             setMinimumSize(new Dimension(200, 150));
+        }
+
+        public void setYAxisLabel(String label) {
+            this.yAxisLabel = label;
         }
 
         public void setMode(Mode mode, Map<String, Integer> data,
@@ -1518,10 +1762,11 @@ public class SvnCommitLogAnalysisToolWindowUI {
                     ? data.values().stream().max(Integer::compare).orElse(1)
                     : data.values().stream().max(Integer::compare).orElse(1);
 
-            // 标题
+            // 标题（动态）
             g2.setColor(UIManager.getColor("Label.foreground"));
             g2.setFont(getFont().deriveFont(Font.BOLD, 13f));
-            g2.drawString("提交次数分布", chartLeft + chartWidth / 2 - 40, chartTop - 8);
+            int titleW = g2.getFontMetrics().stringWidth(yAxisLabel);
+            g2.drawString(yAxisLabel, chartLeft + chartWidth / 2 - titleW / 2, chartTop - 8);
 
             // 坐标轴
             g2.setColor(UIManager.getColor("Label.disabledForeground"));

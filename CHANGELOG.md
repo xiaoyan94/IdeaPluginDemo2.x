@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-06-15
+
+- 支持多项目分析与可视化，优化UI交互
+- 支持SVN提交日志代码量分析与可视化
+  - 新增SVN提交日志的代码量统计功能，可在日志和统计表格中展示代码变更行数。
+  - 引入“按代码量”和“按提交次数”两种统计指标切换，优化图表可视化分析。
+  - 改进代码量统计规则，只统计`.java`和`*Mapper.xml`文件变更，并排除`/components/`目录。   
+  - 修复SVN diff命令处理大量数据时可能引发的死锁问题，通过异步读取进程输出流增强了稳定性。
+  - 调整SVN日志查询的日期范围逻辑，确保用户选择的结束日期包含当天所有提交记录。
+- 优化插件国际化配置，将UI文本统一管理，提升了维护性和可扩展性。
+
 ## [2.0.8] - 2026-06-15
 
 - 新增 SVN 提交日志分析工具窗口，支持按时间范围和项目路径分析SVN提交记录
@@ -89,7 +100,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.8...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.9...HEAD
+[2.0.9]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.5...v2.0.6
