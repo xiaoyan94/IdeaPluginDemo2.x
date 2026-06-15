@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-06-15
+
+- 新增 SVN 提交日志分析工具窗口，支持按时间范围和项目路径分析SVN提交记录
+- 支持作者筛选，筛选后统计图表、提交列表和结构化 Prompt 同步更新
+- 柱状图可视化：柱子宽度钳制并在 slot 内居中，slot 均分填满横坐标，避免作者少/多时布局失衡
+- 支持一键生成结构化 Prompt，可粘贴给大模型生成报告
+- 支持手动选择报告类型：日报、周报、月度总结、年中总结、年度总结，每种类型有针对性指令
+- 支持 Prompt 输出开关：包含详细变更路径 / 包含统计摘要
+- 分析结果表格支持列排序和多选复制
+
 ## [2.0.7] - 2026-06-11
 
 - 添加批量编辑 VM 参数功能
@@ -79,7 +89,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.7...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.8...HEAD
+[2.0.8]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.4-alpha.2...v2.0.5

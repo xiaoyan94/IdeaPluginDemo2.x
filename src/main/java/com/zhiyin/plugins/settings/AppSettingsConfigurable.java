@@ -43,6 +43,8 @@ final class AppSettingsConfigurable implements Configurable {
         isModified |= !mySettingsComponent.getMapperToDaoSearchScope().getValue().equals(settings.mapperToDaoModuleScope);
         // Add the new field to the modification check
         isModified |= !mySettingsComponent.getCommitTemplateText().equals(settings.commitMessageTemplate);
+        isModified |= !mySettingsComponent.getSvnProjectPathsText().equals(
+                settings.svnProjectPaths != null ? settings.svnProjectPaths : "");
         return isModified;
     }
 
@@ -53,6 +55,7 @@ final class AppSettingsConfigurable implements Configurable {
         settings.mapperToDaoModuleScope = mySettingsComponent.getMapperToDaoSearchScope().getValue();
         // Save the new field's value
         settings.commitMessageTemplate = mySettingsComponent.getCommitTemplateText();
+        settings.svnProjectPaths = mySettingsComponent.getSvnProjectPathsText();
     }
 
     @Override
@@ -67,6 +70,7 @@ final class AppSettingsConfigurable implements Configurable {
         }
         // Load the saved value into the text field
         mySettingsComponent.setCommitTemplateText(settings.commitMessageTemplate);
+        mySettingsComponent.setSvnProjectPathsText(settings.svnProjectPaths);
     }
 
     @Override

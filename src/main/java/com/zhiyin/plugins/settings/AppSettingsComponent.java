@@ -23,6 +23,9 @@ public class AppSettingsComponent {
     // Add a new text field for the commit template
     private final JBTextArea commitTemplateText = new JBTextArea();
 
+    // 多项目SVN路径配置
+    private final JBTextArea svnProjectPathsText = new JBTextArea();
+
     public AppSettingsComponent() {
         mapperToDaoSearchScope.addItem(MySearchScopeItem.MODULE);
         mapperToDaoSearchScope.addItem(MySearchScopeItem.PROJECT);
@@ -32,6 +35,13 @@ public class AppSettingsComponent {
         commitTemplateText.setBorder(BorderFactory.createTitledBorder("Commit message template"));
         // 设置为微软雅黑
         commitTemplateText.setFont(new Font("Microsoft YaHei", Font.BOLD, 12));
+
+        // SVN项目路径配置
+        svnProjectPathsText.setRows(6);
+        svnProjectPathsText.setLineWrap(false);
+        svnProjectPathsText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        svnProjectPathsText.setToolTipText("每行一个项目: 项目名=SVN本地工作目录绝对路径\n例如: CloudMES=D:/workspace/cloudmes\n       Fobrite=D:/workspace/fobrite");
+
         myMainPanel = FormBuilder.createFormBuilder()
                 .addLabeledComponent("I18n", new JSeparator())
                 .addComponent(defaultCollapseI18nStatus)
@@ -41,6 +51,8 @@ public class AppSettingsComponent {
                 .addVerticalGap(20)
                 // Add the new text field with a label
                 .addLabeledComponent("SVN提交模板自定义前缀", commitTemplateText)
+                .addVerticalGap(10)
+                .addLabeledComponent("SVN项目路径配置 (项目名=路径, 每行一个)", svnProjectPathsText)
                 .addComponentFillVertically(new JPanel(), 0)
                 .getPanel();
     }
@@ -79,6 +91,15 @@ public class AppSettingsComponent {
 
     public void setCommitTemplateText(String newText) {
         commitTemplateText.setText(newText);
+    }
+
+    // SVN项目路径配置 getter/setter
+    public String getSvnProjectPathsText() {
+        return svnProjectPathsText.getText();
+    }
+
+    public void setSvnProjectPathsText(String paths) {
+        svnProjectPathsText.setText(paths != null ? paths : "");
     }
 
 }
