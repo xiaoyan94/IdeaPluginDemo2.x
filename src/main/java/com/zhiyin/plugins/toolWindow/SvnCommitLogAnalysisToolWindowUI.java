@@ -64,7 +64,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JProgressBar progressBar = new JProgressBar();
 
     // ---- 提交记录表格 ----
-    private final String[] logColumnNames = {"版本号", "作者", "日期", "消息摘要", "变更文件数"};
+    private final String[] logColumnNames = {"版本号", "项目", "作者", "日期", "消息摘要", "变更文件数"};
     private final DefaultTableModel logTableModel = new DefaultTableModel(logColumnNames, 0) {
         @Override
         public boolean isCellEditable(int row, int column) { return false; }
@@ -72,7 +72,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JBTable logTable = new JBTable(logTableModel);
 
     // ---- 统计表格 ----
-    private final String[] statColumnNames = {"作者", "提交次数", "变更文件总数", "占比"};
+    private final String[] statColumnNames = {"作者", "项目", "提交次数", "变更文件总数", "占比"};
     private final DefaultTableModel statTableModel = new DefaultTableModel(statColumnNames, 0) {
         @Override
         public boolean isCellEditable(int row, int column) { return false; }
@@ -90,6 +90,11 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JCheckBox includeDetailCheck = new JCheckBox("包含详细变更路径", true);
     private final JCheckBox includeStatsCheck = new JCheckBox("包含统计摘要", true);
 
+    // ---- 项目多选 ----
+    private final JButton projectSelectBtn = new JButton("选择项目...");
+    private final Map<String, JCheckBox> projectCheckMap = new LinkedHashMap<>();
+    private List<ProjectConfig> projectConfigs = new ArrayList<>();
+
     // ---- 数据 ----
     private List<SvnCommitRecord> commitRecords = new ArrayList<>();
     private Map<String, AuthorStats> authorStatsMap = new LinkedHashMap<>();
@@ -100,8 +105,8 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
     // ---- 缓存：项目的作者列表 ----
     private final Set<String> allAuthorsCache = new LinkedHashSet<>();
-    // 记录上次分析的工作目录（供 refreshPrompt 使用）
-    private String lastAnalyzedWorkDir = "";
+    // 记录上次分析的项目路径列表（供 refreshPrompt 使用）
+    private List<String> lastAnalyzedWorkDirs = new ArrayList<>();
 
     private static final SimpleDateFormat DATE_FMT = new SimpleDateFormat("yyyy-MM-dd");
     private static final SimpleDateFormat SVN_DATE_FMT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -144,11 +149,10 @@ public class SvnCommitLogAnalysisToolWindowUI {
         startDatePickerBtn.addActionListener(e -> showDatePicker(startDateField));
         endDatePickerBtn.addActionListener(e -> showDatePicker(endDateField));
 
-        // 项目下拉框
-        projectCombo.setToolTipText("选择要分析的SVN项目（可在设置中配置多个项目路径）");
-        projectCombo.addItem("-- 默认(项目根目录) --");
-        // 从设置中加载已配置的SVN项目路径
-        refreshProjectCombo();
+        // 项目多选按钮
+        projectSelectBtn.setToolTipText("选择要分析的SVN项目（支持多选，可在设置中配置项目别名=路径）");
+        projectSelectBtn.addActionListener(e -> showProjectSelector());
+        refreshProjectCheckList();
 
         // 作者下拉框（含"全部"选项）
         authorCombo.addItem("-- 全部作者 --");
@@ -201,11 +205,15 @@ public class SvnCommitLogAnalysisToolWindowUI {
         SimpleToolWindowPanel panel = new SimpleToolWindowPanel(true, false);
         panel.setContent(root);
 
-        // 每次 toolWindow 变为可见时，自动刷新项目下拉框（用户可能在设置中修改了路径）
+        // 每次 toolWindow 变为可见时，自动刷新项目列表（用户可能在设置中修改了路径）
+        // 用 invokeLater 延迟执行，确保持久化状态已完全加载
         root.addAncestorListener(new javax.swing.event.AncestorListener() {
             @Override
             public void ancestorAdded(javax.swing.event.AncestorEvent event) {
-                refreshProjectCombo();
+                SwingUtilities.invokeLater(() -> {
+                    refreshProjectCheckList();
+                    updateProjectBtnLabel();
+                });
             }
             @Override
             public void ancestorRemoved(javax.swing.event.AncestorEvent event) {}
@@ -248,13 +256,13 @@ public class SvnCommitLogAnalysisToolWindowUI {
         endPanel.add(endDatePickerBtn, BorderLayout.EAST);
         panel.add(endPanel, gbc);
 
-        // Row 1: 项目、作者、操作按钮
+        // Row 1: 项目、作者
         row++;
         gbc.gridy = row; gbc.gridx = 0; gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
         panel.add(new JLabel("项目:"), gbc);
 
         gbc.gridx = 1; gbc.weightx = 0.3; gbc.fill = GridBagConstraints.HORIZONTAL;
-        panel.add(projectCombo, gbc);
+        panel.add(projectSelectBtn, gbc);
 
         gbc.gridx = 2; gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
         panel.add(new JLabel("作者:"), gbc);
@@ -284,15 +292,16 @@ public class SvnCommitLogAnalysisToolWindowUI {
     // ================================================================
 
     private JComponent buildLogTablePanel() {
-        // 设置列宽：版本号/作者/日期 窄列，消息摘要 宽列，变更文件数 窄列
-        logTable.getColumnModel().getColumn(0).setPreferredWidth(70);   // 版本号
-        logTable.getColumnModel().getColumn(1).setPreferredWidth(80);   // 作者
-        logTable.getColumnModel().getColumn(2).setPreferredWidth(130);  // 日期
-        logTable.getColumnModel().getColumn(3).setPreferredWidth(400);  // 消息摘要 - 宽列
-        logTable.getColumnModel().getColumn(4).setPreferredWidth(70);   // 变更文件数
+        // 设置列宽：版本号/项目/作者 窄列，日期 中列，消息摘要 宽列，变更文件数 窄列
+        logTable.getColumnModel().getColumn(0).setPreferredWidth(65);   // 版本号
+        logTable.getColumnModel().getColumn(1).setPreferredWidth(80);   // 项目
+        logTable.getColumnModel().getColumn(2).setPreferredWidth(70);   // 作者
+        logTable.getColumnModel().getColumn(3).setPreferredWidth(125);  // 日期
+        logTable.getColumnModel().getColumn(4).setPreferredWidth(390);  // 消息摘要 - 宽列
+        logTable.getColumnModel().getColumn(5).setPreferredWidth(65);   // 变更文件数
 
         // 消息摘要列使用 JTextArea 渲染器，支持自动换行显示完整内容
-        logTable.getColumnModel().getColumn(3).setCellRenderer(new TableCellRenderer() {
+        logTable.getColumnModel().getColumn(4).setCellRenderer(new TableCellRenderer() {
             private final JTextArea textArea = new JTextArea();
             {
                 textArea.setLineWrap(true);
@@ -337,16 +346,16 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
         // 左侧：统计表格
         JBScrollPane statScroll = new JBScrollPane(statTable);
-        statScroll.setPreferredSize(new Dimension(280, 0));
+        statScroll.setPreferredSize(new Dimension(340, 0));
         splitPane.setLeftComponent(statScroll);
 
         // 右侧：可视化图表
         chartPanel.setPreferredSize(new Dimension(350, 0));
         chartPanel.setMinimumSize(new Dimension(200, 0));
-        splitPane.setRightComponent(new JBScrollPane(chartPanel));
+        splitPane.setRightComponent(chartPanel);
 
-        splitPane.setResizeWeight(0.45);
-        splitPane.setDividerLocation(0.45);
+        splitPane.setResizeWeight(0.50);
+        splitPane.setDividerLocation(0.50);
         return splitPane;
     }
 
@@ -398,30 +407,146 @@ public class SvnCommitLogAnalysisToolWindowUI {
     }
 
     /**
-     * 从设置中重新加载项目下拉框
-     * 公开方法，供 Factory 在 toolWindow 激活时调用
+     * 从设置中解析项目配置列表（别名=路径）
      */
-    public void refreshProjectCombo() {
-        String currentSelected = (String) projectCombo.getSelectedItem();
-        // 清除除"默认"外的所有项目
-        while (projectCombo.getItemCount() > 1) {
-            projectCombo.removeItemAt(projectCombo.getItemCount() - 1);
-        }
-        // 从设置加载项目
+    private List<ProjectConfig> parseProjectConfigs() {
+        List<ProjectConfig> configs = new ArrayList<>();
         AppSettingsState settings = AppSettingsState.getInstance();
         String paths = settings.svnProjectPaths;
         if (paths != null && !paths.trim().isEmpty()) {
             for (String line : paths.split("\\n")) {
                 line = line.trim();
                 if (line.isEmpty()) continue;
-                String projectName = line.contains("=") ? line.substring(0, line.indexOf('=')).trim() : line;
-                projectCombo.addItem(projectName);
+                if (line.contains("=")) {
+                    String name = line.substring(0, line.indexOf('=')).trim();
+                    String path = line.substring(line.indexOf('=') + 1).trim();
+                    if (!name.isEmpty() && !path.isEmpty()) {
+                        configs.add(new ProjectConfig(name, path));
+                    }
+                }
             }
         }
-        // 恢复之前选中的项
-        if (currentSelected != null) {
-            projectCombo.setSelectedItem(currentSelected);
+        return configs;
+    }
+
+    /**
+     * 从设置中重新加载项目多项选择列表
+     */
+    public void refreshProjectCheckList() {
+        projectConfigs = parseProjectConfigs();
+        projectCheckMap.clear();
+        for (ProjectConfig cfg : projectConfigs) {
+            JCheckBox cb = new JCheckBox(cfg.name);
+            projectCheckMap.put(cfg.name, cb);
         }
+        updateProjectBtnLabel();
+    }
+
+    private void updateProjectBtnLabel() {
+        int selected = getSelectedProjectCount();
+        if (selected == 0) {
+            projectSelectBtn.setText("选择项目...");
+        } else {
+            projectSelectBtn.setText("已选 " + selected + " 个项目");
+        }
+    }
+
+    private int getSelectedProjectCount() {
+        int count = 0;
+        for (JCheckBox cb : projectCheckMap.values()) {
+            if (cb.isSelected()) count++;
+        }
+        return count;
+    }
+
+    /**
+     * 弹出项目多选菜单
+     * 每次点击时主动重新读取配置，并校验路径有效性
+     */
+    private void showProjectSelector() {
+        // 主动重新读取项目路径配置
+        refreshProjectCheckList();
+
+        // 先校验配置格式（别名=路径）
+        List<String> formatErrors = new ArrayList<>();
+        AppSettingsState settings = AppSettingsState.getInstance();
+        String paths = settings.svnProjectPaths;
+        if (paths != null && !paths.trim().isEmpty()) {
+            int lineNum = 0;
+            for (String line : paths.split("\\n")) {
+                lineNum++;
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) continue;
+                if (!trimmed.contains("=")) {
+                    formatErrors.add("第" + lineNum + "行格式错误（缺少\"=\"分隔符）: " + trimmed);
+                    continue;
+                }
+                String name = trimmed.substring(0, trimmed.indexOf('=')).trim();
+                String path = trimmed.substring(trimmed.indexOf('=') + 1).trim();
+                if (name.isEmpty()) {
+                    formatErrors.add("第" + lineNum + "行格式错误（别名为空）: " + trimmed);
+                }
+                if (path.isEmpty()) {
+                    formatErrors.add("第" + lineNum + "行格式错误（路径为空）: " + trimmed);
+                }
+            }
+        }
+        if (!formatErrors.isEmpty()) {
+            MyPluginMessages.showWarning(
+                "项目路径配置格式校验",
+                "配置格式应为每行\"别名=路径\"：\n" + String.join("\n", formatErrors),
+                project
+            );
+        }
+
+        // 校验项目路径有效性
+        List<String> invalidPaths = new ArrayList<>();
+        for (ProjectConfig cfg : projectConfigs) {
+            java.io.File dir = new java.io.File(cfg.path);
+            if (!dir.exists() || !dir.isDirectory()) {
+                invalidPaths.add(cfg.name + " (" + cfg.path + ")");
+            }
+        }
+        if (!invalidPaths.isEmpty()) {
+            MyPluginMessages.showWarning(
+                "项目路径校验",
+                "以下项目路径无效或不存在：\n" + String.join("\n", invalidPaths),
+                project
+            );
+        }
+
+        JPopupMenu popup = new JPopupMenu();
+        if (projectCheckMap.isEmpty()) {
+            popup.add(new JLabel("（请在设置中配置项目别名=路径）")).setEnabled(false);
+        } else {
+            // 全选 / 取消全选
+            JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+            JButton selectAllBtn = new JButton("全选");
+            JButton deselectAllBtn = new JButton("取消");
+            selectAllBtn.addActionListener(e -> {
+                for (JCheckBox cb : projectCheckMap.values()) cb.setSelected(true);
+                updateProjectBtnLabel();
+            });
+            deselectAllBtn.addActionListener(e -> {
+                for (JCheckBox cb : projectCheckMap.values()) cb.setSelected(false);
+                updateProjectBtnLabel();
+            });
+            actionPanel.add(selectAllBtn);
+            actionPanel.add(deselectAllBtn);
+            popup.add(actionPanel);
+            popup.addSeparator();
+
+            for (JCheckBox cb : projectCheckMap.values()) {
+                cb.addActionListener(e -> updateProjectBtnLabel());
+                popup.add(cb);
+            }
+        }
+        popup.show(projectSelectBtn, 0, projectSelectBtn.getHeight());
+    }
+
+    public void refreshProjectCombo() {
+        // 兼容旧接口，内部调用新方法
+        refreshProjectCheckList();
     }
 
     /**
@@ -462,69 +587,33 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private void performAnalysisForCurrent() {
         String base = project.getBasePath();
         String svnWorkDir = base != null ? base : System.getProperty("user.dir");
-        doPerformAnalysis(svnWorkDir);
+        List<ProjectConfig> configs = new ArrayList<>();
+        configs.add(new ProjectConfig("当前项目", svnWorkDir));
+        doPerformAnalysis(configs);
     }
 
     /**
-     * 分析下拉框中选中的配置项目
+     * 分析勾选中的配置项目
      */
     private void performAnalysisForSelected() {
-        int idx = projectCombo.getSelectedIndex();
-        if (idx <= 0) {
-            MyPluginMessages.showWarning("提示", "请先在设置中配置项目路径，然后从下拉框中选择项目", project);
+        List<ProjectConfig> selected = new ArrayList<>();
+        for (ProjectConfig cfg : projectConfigs) {
+            JCheckBox cb = projectCheckMap.get(cfg.name);
+            if (cb != null && cb.isSelected()) {
+                selected.add(cfg);
+            }
+        }
+        if (selected.isEmpty()) {
+            MyPluginMessages.showWarning("提示", "请先在设置中配置项目路径，然后勾选要分析的项目", project);
             return;
         }
-        String selected = (String) projectCombo.getSelectedItem();
-        String svnWorkDir = resolveProjectPath(selected);
-        if (svnWorkDir == null) {
-            MyPluginMessages.showWarning("错误", "未找到项目路径配置: " + selected, project);
-            return;
-        }
-        doPerformAnalysis(svnWorkDir);
+        doPerformAnalysis(selected);
     }
 
     /**
-     * 从设置中查找项目的实际路径
-     * 支持两种格式:
-     * 1. 项目名=路径   (如 CloudMES=D:/workspace/cloudmes)
-     * 2. 直接路径       (如 D:/workspace/cloudmes)
-     * 同时支持选中值本身就是一个有效路径的情况
+     * 核心分析逻辑（支持多项目）
      */
-    private String resolveProjectPath(String projectName) {
-        // 1) 先看选中值本身是不是有效路径（直接路径配置的兜底）
-        if (projectName != null && !projectName.isEmpty()) {
-            java.io.File f = new java.io.File(projectName);
-            if (f.isDirectory()) {
-                return projectName;
-            }
-        }
-
-        // 2) 从设置中查找
-        AppSettingsState settings = AppSettingsState.getInstance();
-        String paths = settings.svnProjectPaths;
-        if (paths != null) {
-            for (String line : paths.split("\\n")) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-
-                if (line.contains("=")) {
-                    // name=path 格式
-                    String name = line.substring(0, line.indexOf('=')).trim();
-                    String path = line.substring(line.indexOf('=') + 1).trim();
-                    if (name.equals(projectName)) return path;
-                } else {
-                    // 直接路径格式
-                    if (line.equals(projectName)) return line;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 核心分析逻辑
-     */
-    private void doPerformAnalysis(final String svnWorkDir) {
+    private void doPerformAnalysis(final List<ProjectConfig> configs) {
         if (analysisRunning.get()) return;
 
         final String startDate = startDateField.getText().trim();
@@ -545,14 +634,16 @@ public class SvnCommitLogAnalysisToolWindowUI {
         }
 
         saveLastDateRange();
-        lastAnalyzedWorkDir = svnWorkDir;
+        lastAnalyzedWorkDirs.clear();
+        for (ProjectConfig cfg : configs) lastAnalyzedWorkDirs.add(cfg.path);
 
         final String authorFilter = getSelectedAuthor();
 
         // 重置 UI
         logTableModel.setRowCount(0);
         statTableModel.setRowCount(0);
-        chartPanel.setData(Collections.emptyMap());
+        chartPanel.setStackedData(Collections.emptyMap());
+        chartPanel.clearProjectTabs();
         promptArea.setText("");
         commitRecords.clear();
         authorStatsMap.clear();
@@ -563,53 +654,77 @@ public class SvnCommitLogAnalysisToolWindowUI {
         cancelButton.setEnabled(true);
         progressBar.setVisible(true);
         progressBar.setIndeterminate(true);
-        statusLabel.setText("正在分析 SVN 提交日志... [" + svnWorkDir + "]");
+        statusLabel.setText("正在分析 SVN 提交日志... [" + configs.size() + " 个项目]");
 
         // 使用 IntelliJ 标准的后台任务 API（支持取消、进度反馈）
         ProgressManager.getInstance().run(new Task.Backgroundable(project, "SVN 提交日志分析", true) {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
-                    indicator.setText("正在查询 SVN 日志...");
-                    indicator.setFraction(0.1);
+                    // Step 1: 遍历所有项目执行 svn log
+                    List<SvnCommitRecord> allRecords = new ArrayList<>();
+                    List<SvnCommitRecord> allErrors = new ArrayList<>();
+                    float perProjectFraction = 0.5f / Math.max(1, configs.size());
 
-                    // Step 1: 执行 svn log 获取详细提交记录
-                    List<SvnCommitRecord> records = fetchSvnLog(svnWorkDir, startDate, endDate, indicator);
+                    for (int i = 0; i < configs.size(); i++) {
+                        ProjectConfig cfg = configs.get(i);
+                        indicator.setText("正在查询: " + cfg.name + "...");
+                        indicator.setFraction(0.1f + i * perProjectFraction);
+                        if (indicator.isCanceled()) return;
+
+                        try {
+                            List<SvnCommitRecord> records = fetchSvnLog(cfg.name, cfg.path, startDate, endDate, indicator);
+                            allRecords.addAll(records);
+                        } catch (Exception ex) {
+                            // 单个项目失败不中断整体，记录错误
+                            allErrors.add(new SvnCommitRecord(cfg.name, "", "ERROR", "",
+                                    ex.getMessage(), 0, Collections.<String>emptyList(), ex.getMessage()));
+                        }
+                    }
+
                     if (indicator.isCanceled()) return;
 
-                    if (records.isEmpty()) {
+                    if (allRecords.isEmpty()) {
                         updateUIStatus("未找到提交记录", false);
                         return;
                     }
 
-                    // Step 2: 按作者过滤（三元表达式确保 effectively final）
+                    // Step 2: 按作者过滤
+                    indicator.setText("正在按作者筛选...");
+                    indicator.setFraction(0.65f);
                     final List<SvnCommitRecord> filteredRecords = (authorFilter != null && !authorFilter.isEmpty())
-                            ? records.stream()
+                            ? allRecords.stream()
                                     .filter(r -> r.author.equalsIgnoreCase(authorFilter))
                                     .collect(Collectors.toList())
-                            : records;
+                            : allRecords;
 
                     if (indicator.isCanceled()) return;
                     indicator.setText("正在统计分析...");
-                    indicator.setFraction(0.7);
+                    indicator.setFraction(0.8);
 
                     // Step 3: 统计分析
                     commitRecords = filteredRecords;
                     authorStatsMap = computeAuthorStats(filteredRecords);
 
+                    // 构建堆叠图表数据：每个作者 → 每个项目的提交次数
+                    final Map<String, Map<String, Integer>> stackedChartData = computeStackedChartData(filteredRecords);
+                    // 构建每个项目的独立图表数据
+                    final Map<String, Map<String, Integer>> perProjectChartData = computePerProjectChartData(filteredRecords);
+
                     if (indicator.isCanceled()) return;
                     indicator.setText("正在更新界面...");
-                    indicator.setFraction(0.9);
+                    indicator.setFraction(0.95);
 
                     // Step 4: 更新 UI（必须在 EDT 线程）
-                    final String statusMsg = String.format("完成 - 共 %d 条提交记录，%d 位作者",
-                            filteredRecords.size(), authorStatsMap.size());
+                    final String statusMsg = String.format("完成 - %d 个项目，共 %d 条提交记录，%d 位作者",
+                            configs.size(), filteredRecords.size(), authorStatsMap.size());
                     ApplicationManager.getApplication().invokeLater(() -> {
                         displayedRecords = commitRecords;
                         displayedStats = authorStatsMap;
                         updateLogTable(filteredRecords);
                         updateStatsTable(authorStatsMap);
-                        chartPanel.setData(toChartData(authorStatsMap));
+                        chartPanel.setStackedData(stackedChartData);
+                        chartPanel.setProjectTabs(perProjectChartData);
                         refreshAuthorCombo();
                         refreshPrompt();
                         updateUIStatus(statusMsg, false);
@@ -652,7 +767,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
      * 执行 svn log 命令获取提交记录
      * 使用 svn log --xml 格式解析，获取完整的提交元数据
      */
-    private List<SvnCommitRecord> fetchSvnLog(String workDir, String startDate, String endDate,
+    private List<SvnCommitRecord> fetchSvnLog(String projectName, String workDir, String startDate, String endDate,
                                                ProgressIndicator indicator) throws Exception {
         List<SvnCommitRecord> records = new ArrayList<>();
 
@@ -698,8 +813,8 @@ public class SvnCommitLogAnalysisToolWindowUI {
             throw new RuntimeException("SVN 命令执行失败 (exit=" + process.exitValue() + "):\n" + errorMsg);
         }
 
-        // 解析 XML
-        records = parseSvnLogXml(xmlOutput.toString());
+        // 解析 XML 并注入项目名称
+        records = parseSvnLogXml(projectName, xmlOutput.toString());
 
         // 缓存作者列表
         for (SvnCommitRecord r : records) {
@@ -721,7 +836,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
      *   </paths>
      * </logentry>
      */
-    private List<SvnCommitRecord> parseSvnLogXml(String xml) {
+    private List<SvnCommitRecord> parseSvnLogXml(String projectName, String xml) {
         List<SvnCommitRecord> records = new ArrayList<>();
 
         // 简单字符串解析，不引入 XML 解析库
@@ -758,7 +873,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
             String summary = msg != null ? msg.replace('\n', ' ').replace('\r', ' ').trim() : "";
 
             records.add(new SvnCommitRecord(
-                    "r" + revision, author, displayDate != null ? displayDate : dateStr,
+                    projectName, "r" + revision, author, displayDate != null ? displayDate : dateStr,
                     summary, changedPaths.size(), changedPaths, msg
             ));
         }
@@ -795,6 +910,9 @@ public class SvnCommitLogAnalysisToolWindowUI {
             AuthorStats stats = map.computeIfAbsent(r.author, k -> new AuthorStats(k));
             stats.commitCount++;
             stats.totalChangedFiles += r.changedFileCount;
+            if (r.projectName != null && !r.projectName.isEmpty()) {
+                stats.projectNames.add(r.projectName);
+            }
         }
         // 计算占比
         for (AuthorStats s : map.values()) {
@@ -818,6 +936,53 @@ public class SvnCommitLogAnalysisToolWindowUI {
         return data;
     }
 
+    /**
+     * 构建堆叠图表数据：每个作者 → 每个项目 → 提交次数
+     */
+    private Map<String, Map<String, Integer>> computeStackedChartData(List<SvnCommitRecord> records) {
+        // 按作者排序
+        Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
+        // 先收集所有作者
+        Set<String> authors = new LinkedHashSet<>();
+        for (SvnCommitRecord r : records) authors.add(r.author);
+        // 按字母排序作者
+        List<String> sortedAuthors = new ArrayList<>(authors);
+        Collections.sort(sortedAuthors, String.CASE_INSENSITIVE_ORDER);
+
+        for (String author : sortedAuthors) {
+            Map<String, Integer> projectCounts = new LinkedHashMap<>();
+            for (SvnCommitRecord r : records) {
+                if (r.author.equals(author)) {
+                    String pn = r.projectName != null && !r.projectName.isEmpty() ? r.projectName : "未知";
+                    projectCounts.merge(pn, 1, Integer::sum);
+                }
+            }
+            result.put(author, projectCounts);
+        }
+        return result;
+    }
+
+    /**
+     * 构建每个项目的独立图表数据：项目名 → 作者 → 提交次数
+     */
+    private Map<String, Map<String, Integer>> computePerProjectChartData(List<SvnCommitRecord> records) {
+        Map<String, Map<String, Integer>> result = new LinkedHashMap<>();
+        // 按项目分组
+        for (SvnCommitRecord r : records) {
+            String pn = r.projectName != null && !r.projectName.isEmpty() ? r.projectName : "未知";
+            result.computeIfAbsent(pn, k -> new LinkedHashMap<>())
+                  .merge(r.author, 1, Integer::sum);
+        }
+        // 每个项目内部按提交次数降序
+        for (Map<String, Integer> authorMap : result.values()) {
+            List<Map.Entry<String, Integer>> sorted = new ArrayList<>(authorMap.entrySet());
+            sorted.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+            authorMap.clear();
+            for (Map.Entry<String, Integer> e : sorted) authorMap.put(e.getKey(), e.getValue());
+        }
+        return result;
+    }
+
     // ================================================================
     //  UI 更新（必须在 EDT 线程调用）
     // ================================================================
@@ -828,16 +993,19 @@ public class SvnCommitLogAnalysisToolWindowUI {
         logTable.setRowHeight(logTable.getRowHeight());
         for (SvnCommitRecord r : records) {
             logTableModel.addRow(new Object[]{
-                    r.revision, r.author, r.displayDate, r.summary, r.changedFileCount
+                    r.revision, r.projectName, r.author, r.displayDate, r.summary, r.changedFileCount
             });
         }
     }
 
     private void updateStatsTable(Map<String, AuthorStats> statsMap) {
         statTableModel.setRowCount(0);
+        // 按作者+项目维度展示
         for (AuthorStats s : statsMap.values()) {
+            String projects = s.projectNames != null && !s.projectNames.isEmpty()
+                    ? String.join(", ", s.projectNames) : "-";
             statTableModel.addRow(new Object[]{
-                    s.author, s.commitCount, s.totalChangedFiles, s.percentage
+                    s.author, projects, s.commitCount, s.totalChangedFiles, s.percentage
             });
         }
     }
@@ -878,33 +1046,40 @@ public class SvnCommitLogAnalysisToolWindowUI {
         String endDate = endDateField.getText().trim();
         sb.append("## 基本信息\n");
         sb.append("- 分析时间范围: ").append(startDate).append(" ~ ").append(endDate).append("\n");
-        sb.append("- 项目路径: ").append(lastAnalyzedWorkDir).append("\n");
+        sb.append("- 分析项目数: ").append(lastAnalyzedWorkDirs.size()).append("\n");
+        if (!lastAnalyzedWorkDirs.isEmpty()) {
+            for (String dir : lastAnalyzedWorkDirs) {
+                sb.append("  - ").append(dir).append("\n");
+            }
+        }
         sb.append("- 提交总数: ").append(displayedRecords.size()).append("\n");
         sb.append("- 参与人员: ").append(displayedStats.size()).append(" 位\n\n");
 
         if (includeStatsCheck.isSelected()) {
             sb.append("## 人员统计\n");
-            sb.append("| 作者 | 提交次数 | 变更文件总数 | 占比 |\n");
-            sb.append("|------|---------|-------------|------|\n");
+            sb.append("| 作者 | 涉及项目 | 提交次数 | 变更文件总数 | 占比 |\n");
+            sb.append("|------|---------|---------|-------------|------|\n");
             for (AuthorStats s : displayedStats.values()) {
-                sb.append(String.format("| %s | %d | %d | %s |\n",
-                        s.author, s.commitCount, s.totalChangedFiles, s.percentage));
+                String projects = s.projectNames != null && !s.projectNames.isEmpty()
+                        ? String.join(", ", s.projectNames) : "-";
+                sb.append(String.format("| %s | %s | %d | %d | %s |\n",
+                        s.author, projects, s.commitCount, s.totalChangedFiles, s.percentage));
             }
             sb.append("\n");
         }
 
         sb.append("## 提交记录汇总\n");
         if (includeDetailCheck.isSelected()) {
-            sb.append("| 版本号 | 作者 | 日期 | 消息摘要 | 变更文件 |\n");
-            sb.append("|--------|------|------|---------|----------|\n");
+            sb.append("| 版本号 | 项目 | 作者 | 日期 | 消息摘要 | 变更文件 |\n");
+            sb.append("|--------|------|------|------|---------|----------|\n");
             for (SvnCommitRecord r : displayedRecords) {
-                sb.append(String.format("| %s | %s | %s | %s | %d |\n",
-                        r.revision, r.author, r.displayDate, r.summary, r.changedFileCount));
+                sb.append(String.format("| %s | %s | %s | %s | %s | %d |\n",
+                        r.revision, r.projectName, r.author, r.displayDate, r.summary, r.changedFileCount));
             }
         } else {
             for (SvnCommitRecord r : displayedRecords) {
-                sb.append(String.format("- %s | %s | %s | %s\n",
-                        r.revision, r.author, r.displayDate, r.summary));
+                sb.append(String.format("- [%s] %s | %s | %s | %s\n",
+                        r.projectName, r.revision, r.author, r.displayDate, r.summary));
             }
         }
         sb.append("\n");
@@ -988,7 +1163,10 @@ public class SvnCommitLogAnalysisToolWindowUI {
         displayedRecords = filtered;
         displayedStats = filteredStats;
         updateStatsTable(filteredStats);
-        chartPanel.setData(toChartData(filteredStats));
+        Map<String, Map<String, Integer>> stackedData = computeStackedChartData(filtered);
+        Map<String, Map<String, Integer>> perProjectData = computePerProjectChartData(filtered);
+        chartPanel.setStackedData(stackedData);
+        chartPanel.setProjectTabs(perProjectData);
         refreshPrompt();
     }
 
@@ -1124,6 +1302,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     // ================================================================
 
     public static class SvnCommitRecord {
+        public final String projectName;  // 所属项目别名
         public final String revision;
         public final String author;
         public final String displayDate;
@@ -1132,9 +1311,10 @@ public class SvnCommitLogAnalysisToolWindowUI {
         public final List<String> changedPaths;
         public final String fullMessage;
 
-        public SvnCommitRecord(String revision, String author, String displayDate,
+        public SvnCommitRecord(String projectName, String revision, String author, String displayDate,
                                String summary, int changedFileCount,
                                List<String> changedPaths, String fullMessage) {
+            this.projectName = projectName;
             this.revision = revision;
             this.author = author;
             this.displayDate = displayDate;
@@ -1150,18 +1330,35 @@ public class SvnCommitLogAnalysisToolWindowUI {
         public int commitCount = 0;
         public int totalChangedFiles = 0;
         public String percentage = "0%";
+        public final Set<String> projectNames = new LinkedHashSet<>();  // 涉及的多个项目
 
         public AuthorStats(String author) {
             this.author = author;
         }
     }
 
+    /** 项目配置：名称 + 路径 */
+    static class ProjectConfig {
+        final String name;
+        final String path;
+        ProjectConfig(String name, String path) { this.name = name; this.path = path; }
+    }
+
     // ================================================================
-    //  可视化图表组件（自定义绘制柱状图）
+    //  可视化图表组件（支持堆叠柱状图 + 分项目 Tab）
     // ================================================================
 
     static class ChartPanel extends JPanel {
         private Map<String, Integer> data = Collections.emptyMap();
+        // 堆叠数据：作者 → (项目 → 次数)
+        private Map<String, Map<String, Integer>> stackedData = Collections.emptyMap();
+        // 分项目数据：项目 → (作者 → 次数)
+        private Map<String, Map<String, Integer>> projectData = Collections.emptyMap();
+        // 内部 Tab 面板
+        private final JTabbedPane innerTabs = new JTabbedPane();
+        // 堆叠图画板
+        private final BarCanvas stackedCanvas = new BarCanvas();
+
         private static final Color[] BAR_COLORS = {
                 new Color(0x4E79A7), new Color(0xF28E2B), new Color(0xE15759),
                 new Color(0x76B7B2), new Color(0x59A14F), new Color(0xEDC948),
@@ -1170,13 +1367,99 @@ public class SvnCommitLogAnalysisToolWindowUI {
         };
 
         public ChartPanel() {
+            super(new BorderLayout());
+            setMinimumSize(new Dimension(200, 150));
+            innerTabs.addTab("汇总(堆叠)", stackedCanvas);
+            add(innerTabs, BorderLayout.CENTER);
+        }
+
+        /** 兼容旧 API：设置单维度数据 */
+        public void setData(Map<String, Integer> data) {
+            this.data = data;
+            stackedCanvas.setMode(BarCanvas.Mode.SINGLE, data, Collections.emptyMap(), Collections.<String>emptyList());
+            repaint();
+        }
+
+        /** 方案 A：设置堆叠柱状图数据 */
+        public void setStackedData(Map<String, Map<String, Integer>> stackedData) {
+            this.stackedData = stackedData;
+            // 转为单维度的作者→总次数
+            Map<String, Integer> authorTotals = new LinkedHashMap<>();
+            for (Map.Entry<String, Map<String, Integer>> e : stackedData.entrySet()) {
+                authorTotals.put(e.getKey(), e.getValue().values().stream().mapToInt(Integer::intValue).sum());
+            }
+            // 收集所有项目名（按出现顺序）
+            Set<String> projectOrder = new LinkedHashSet<>();
+            for (Map<String, Integer> pm : stackedData.values()) {
+                projectOrder.addAll(pm.keySet());
+            }
+            List<String> projectList = new ArrayList<>(projectOrder);
+            stackedCanvas.setMode(BarCanvas.Mode.STACKED, authorTotals, stackedData, projectList);
+            stackedCanvas.repaint();
+        }
+
+        /** 方案 B：设置分项目 Tab */
+        public void setProjectTabs(Map<String, Map<String, Integer>> projectData) {
+            this.projectData = projectData;
+            // 保留"汇总(堆叠)"，清除其余 tab
+            while (innerTabs.getTabCount() > 1) {
+                innerTabs.removeTabAt(innerTabs.getTabCount() - 1);
+            }
+            // 为每个项目创建 Tab
+            for (Map.Entry<String, Map<String, Integer>> entry : projectData.entrySet()) {
+                BarCanvas canvas = new BarCanvas();
+                canvas.setMode(BarCanvas.Mode.SINGLE, entry.getValue(), Collections.emptyMap(), Collections.<String>emptyList());
+                innerTabs.addTab(entry.getKey(), canvas);
+            }
+            innerTabs.repaint();
+        }
+
+        /** 清除所有项目 Tab */
+        public void clearProjectTabs() {
+            while (innerTabs.getTabCount() > 1) {
+                innerTabs.removeTabAt(innerTabs.getTabCount() - 1);
+            }
+            stackedCanvas.setMode(BarCanvas.Mode.SINGLE, Collections.emptyMap(), Collections.emptyMap(), Collections.<String>emptyList());
+            repaint();
+        }
+    }
+
+    /** 柱状图画布：支持单维度画柱和堆叠画柱 */
+    static class BarCanvas extends JPanel {
+        enum Mode { SINGLE, STACKED }
+
+        private static final Color[] BAR_COLORS = {
+            new Color(0x4E, 0x9A, 0xF1), // 蓝
+            new Color(0xF0, 0x8C, 0x2D), // 橙
+            new Color(0x5E, 0xB8, 0x6A), // 绿
+            new Color(0xE8, 0x49, 0x49), // 红
+            new Color(0x9B, 0x59, 0xB6), // 紫
+            new Color(0x34, 0x95, 0x8E), // 青
+            new Color(0xF3, 0x9C, 0x12), // 金
+            new Color(0x29, 0x80, 0xB9), // 深蓝
+            new Color(0xC0, 0x39, 0x2B), // 深红
+            new Color(0x27, 0xAE, 0x60), // 深绿
+            new Color(0x8E, 0x44, 0xAD), // 深紫
+            new Color(0xD3, 0x54, 0x00), // 暗橙
+        };
+
+        private Mode mode = Mode.SINGLE;
+        private Map<String, Integer> data = Collections.emptyMap();
+        private Map<String, Map<String, Integer>> stackedData = Collections.emptyMap();
+        private List<String> projectOrder = Collections.emptyList();
+
+        public BarCanvas() {
             setBackground(UIManager.getColor("Panel.background"));
             setMinimumSize(new Dimension(200, 150));
         }
 
-        public void setData(Map<String, Integer> data) {
+        public void setMode(Mode mode, Map<String, Integer> data,
+                            Map<String, Map<String, Integer>> stackedData,
+                            List<String> projectOrder) {
+            this.mode = mode;
             this.data = data;
-            repaint();
+            this.stackedData = stackedData;
+            this.projectOrder = projectOrder;
         }
 
         @Override
@@ -1196,22 +1479,13 @@ public class SvnCommitLogAnalysisToolWindowUI {
             int barCount = data.size();
             if (barCount == 0) return;
 
-            // ---- 自适应布局参数 ----
             g2.setFont(getFont().deriveFont(10f));
-            FontMetrics fm = g2.getFontMetrics();
 
-            // 估算最长作者名宽度
-            int maxAuthorLen = 0;
-            for (String author : data.keySet()) {
-                maxAuthorLen = Math.max(maxAuthorLen, fm.stringWidth(author));
-            }
-
-            // 计算每个 bar 的 slot 宽度（均分图表）及实际视觉宽度
+            // ---- 自适应布局 ----
             double slotWidth = (double) (width - 80) / barCount;
             int minBarWidth = 14;
             int maxBarWidth = 80;
 
-            // 决定标签显示策略（用 slotWidth 判断拥挤度）
             boolean rotateLabels = false;
             int labelStep = 1;
             if (slotWidth < 40 && barCount > 8) {
@@ -1222,41 +1496,40 @@ public class SvnCommitLogAnalysisToolWindowUI {
                 labelStep = barCount > 15 ? 3 : 2;
             }
 
-            // 重新计算布局（旋转标签需要更多底部空间）
             int bottomPad = rotateLabels ? 65 : 50;
             int leftPad = 50;
             int chartLeft = leftPad + 10;
             int chartBottom = height - bottomPad - 10;
             int chartRight = width - 20;
-            int chartTop = 30;
+            int chartTop = 40;
             int chartWidth = chartRight - chartLeft;
             int chartHeight = chartBottom - chartTop;
 
-            // slot 均分图表宽度，bar 本体在 slot 内居中且宽度钳制
             slotWidth = Math.max(minBarWidth, (double) chartWidth / barCount);
             double gap = Math.max(1, slotWidth * 0.1);
             double usableBarWidth = Math.min(maxBarWidth, Math.max(minBarWidth, slotWidth - gap));
 
-            // 如果总宽度超出画布，压窄 slot
             if (slotWidth * barCount > chartWidth) {
                 slotWidth = (double) chartWidth / barCount;
                 usableBarWidth = Math.max(4, slotWidth - 2);
             }
 
-            int maxVal = data.values().stream().max(Integer::compare).orElse(1);
+            int maxVal = mode == Mode.STACKED
+                    ? data.values().stream().max(Integer::compare).orElse(1)
+                    : data.values().stream().max(Integer::compare).orElse(1);
 
-            // 绘制标题
+            // 标题
             g2.setColor(UIManager.getColor("Label.foreground"));
             g2.setFont(getFont().deriveFont(Font.BOLD, 13f));
             g2.drawString("提交次数分布", chartLeft + chartWidth / 2 - 40, chartTop - 8);
 
-            // 绘制坐标轴
+            // 坐标轴
             g2.setColor(UIManager.getColor("Label.disabledForeground"));
             g2.setStroke(new BasicStroke(1));
             g2.drawLine(chartLeft, chartTop, chartLeft, chartBottom);
             g2.drawLine(chartLeft, chartBottom, chartRight, chartBottom);
 
-            // Y 轴刻度（自适应刻度数量）
+            // Y 轴刻度
             g2.setFont(getFont().deriveFont(10f));
             int yTickCount = Math.min(maxVal, Math.max(3, chartHeight / 35));
             for (int i = 0; i <= yTickCount; i++) {
@@ -1266,14 +1539,30 @@ public class SvnCommitLogAnalysisToolWindowUI {
                 g2.drawString(String.valueOf(val), chartLeft - 30, y + 4);
             }
 
-            // 绘制柱状图
+            // ---- 绘制柱状图 ----
+            if (mode == Mode.STACKED) {
+                drawStackedBars(g2, chartLeft, chartBottom, chartTop, chartWidth, chartHeight,
+                        maxVal, slotWidth, usableBarWidth, gap, rotateLabels, labelStep);
+            } else {
+                drawSingleBars(g2, chartLeft, chartBottom, chartTop, chartWidth, chartHeight,
+                        maxVal, slotWidth, usableBarWidth, gap, rotateLabels, labelStep);
+            }
+
+            // 图例（仅堆叠模式）
+            if (mode == Mode.STACKED && !projectOrder.isEmpty()) {
+                drawLegend(g2, chartLeft, chartTop - 18);
+            }
+        }
+
+        private void drawSingleBars(Graphics2D g2, int chartLeft, int chartBottom, int chartTop,
+                                    int chartWidth, int chartHeight, int maxVal,
+                                    double slotWidth, double usableBarWidth, double gap,
+                                    boolean rotateLabels, int labelStep) {
             int idx = 0;
             for (Map.Entry<String, Integer> entry : data.entrySet()) {
                 String author = entry.getKey();
                 int val = entry.getValue();
-
                 int barHeight = (int) ((double) val / Math.max(1, maxVal) * chartHeight);
-                // slot 均分占满图表，bar 本体在 slot 内居中
                 double slotLeft = chartLeft + idx * slotWidth;
                 int slotCenterX = (int) (slotLeft + slotWidth / 2);
                 int barVisualOffset = (int) ((slotWidth - usableBarWidth) / 2.0);
@@ -1284,42 +1573,121 @@ public class SvnCommitLogAnalysisToolWindowUI {
                 g2.setColor(barColor);
                 g2.fillRect(x, y, Math.max(2, (int) usableBarWidth), barHeight);
 
-                // 数值标签（柱子够宽时才显示）
-                g2.setColor(UIManager.getColor("Label.foreground"));
+                // 数值标签：柱顶太靠近标题时画在柱子内部
                 g2.setFont(getFont().deriveFont(9f));
                 String valStr = String.valueOf(val);
                 int valW = g2.getFontMetrics().stringWidth(valStr);
-                if (usableBarWidth >= valW + 2) {
+                if (usableBarWidth >= valW + 2 && y > chartTop + 16) {
+                    g2.setColor(UIManager.getColor("Label.foreground"));
                     g2.drawString(valStr, x + (int) (usableBarWidth - valW) / 2, y - 3);
+                } else if (usableBarWidth >= valW + 2) {
+                    g2.setColor(Color.WHITE);
+                    g2.drawString(valStr, x + (int) (usableBarWidth - valW) / 2, y + 14);
                 } else if (y > chartTop + 14) {
-                    // 柱子太窄，数值放柱内白色显示
                     g2.setColor(Color.WHITE);
                     g2.drawString(valStr, x + (int) (usableBarWidth - valW) / 2, y + 14);
                 }
 
-                // 作者标签（按 step 间隔显示，避免拥挤）
-                if (idx % labelStep == 0) {
-                    String label = truncateAuthor(author, (int) slotWidth, g2.getFontMetrics());
-                    g2.setColor(UIManager.getColor("Label.foreground"));
-                    g2.setFont(getFont().deriveFont(10f));
-                    FontMetrics lfm = g2.getFontMetrics();
-                    int labelW = lfm.stringWidth(label);
-
-                    if (rotateLabels) {
-                        // 旋转 45° 绘制标签，定位在 slot 中心
-                        AffineTransform orig = g2.getTransform();
-                        double angle = -Math.PI / 4;
-                        int ly = chartBottom + 8;
-                        g2.translate(slotCenterX, ly);
-                        g2.rotate(angle);
-                        g2.drawString(label, 0, 0);
-                        g2.setTransform(orig);
-                    } else {
-                        int lx = slotCenterX - labelW / 2;
-                        g2.drawString(label, Math.max(0, lx), chartBottom + 14);
-                    }
-                }
+                drawAuthorLabel(g2, author, idx, slotLeft, slotWidth, slotCenterX, chartBottom,
+                        (int) usableBarWidth, rotateLabels, labelStep);
                 idx++;
+            }
+        }
+
+        private void drawStackedBars(Graphics2D g2, int chartLeft, int chartBottom, int chartTop,
+                                     int chartWidth, int chartHeight, int maxVal,
+                                     double slotWidth, double usableBarWidth, double gap,
+                                     boolean rotateLabels, int labelStep) {
+            int idx = 0;
+            for (Map.Entry<String, Integer> entry : data.entrySet()) {
+                String author = entry.getKey();
+                int totalVal = entry.getValue();
+                Map<String, Integer> projCounts = stackedData.getOrDefault(author, Collections.emptyMap());
+
+                double slotLeft = chartLeft + idx * slotWidth;
+                int slotCenterX = (int) (slotLeft + slotWidth / 2);
+                int barVisualOffset = (int) ((slotWidth - usableBarWidth) / 2.0);
+                int barX = (int) (slotLeft + barVisualOffset);
+                int barW = Math.max(2, (int) usableBarWidth);
+
+                // 从底部往上堆叠各项目段
+                int currentY = chartBottom;
+                int pi = 0;
+                for (String project : projectOrder) {
+                    int pVal = projCounts.getOrDefault(project, 0);
+                    if (pVal == 0) { pi++; continue; }
+                    int segHeight = (int) ((double) pVal / Math.max(1, maxVal) * chartHeight);
+                    g2.setColor(BAR_COLORS[pi % BAR_COLORS.length]);
+                    g2.fillRect(barX, currentY - segHeight, barW, segHeight);
+                    // 段内数值（够高时显示）
+                    if (segHeight > 14) {
+                        g2.setColor(Color.WHITE);
+                        g2.setFont(getFont().deriveFont(9f));
+                        String pvStr = String.valueOf(pVal);
+                        int pvW = g2.getFontMetrics().stringWidth(pvStr);
+                        if (barW >= pvW + 2) {
+                            g2.drawString(pvStr, barX + (barW - pvW) / 2, currentY - segHeight / 2 + 4);
+                        }
+                    }
+                    currentY -= segHeight;
+                    pi++;
+                }
+
+                // 总数标签在柱子顶部（柱顶太靠近标题时画在柱子内部）
+                g2.setFont(getFont().deriveFont(Font.BOLD, 9f));
+                String valStr = String.valueOf(totalVal);
+                int valW = g2.getFontMetrics().stringWidth(valStr);
+                int barTop = chartBottom - (int) ((double) totalVal / Math.max(1, maxVal) * chartHeight);
+                if (usableBarWidth >= valW + 2 && barTop > chartTop + 16) {
+                    g2.setColor(UIManager.getColor("Label.foreground"));
+                    g2.drawString(valStr, barX + (int) (usableBarWidth - valW) / 2, barTop - 3);
+                } else if (usableBarWidth >= valW + 2) {
+                    g2.setColor(Color.WHITE);
+                    g2.drawString(valStr, barX + (int) (usableBarWidth - valW) / 2, barTop + 14);
+                } else if (barTop > chartTop + 14) {
+                    g2.setColor(Color.WHITE);
+                    g2.drawString(valStr, barX + (int) (usableBarWidth - valW) / 2, barTop + 14);
+                }
+
+                drawAuthorLabel(g2, author, idx, slotLeft, slotWidth, slotCenterX, chartBottom,
+                        (int) usableBarWidth, rotateLabels, labelStep);
+                idx++;
+            }
+        }
+
+        private void drawAuthorLabel(Graphics2D g2, String author, int idx,
+                                     double slotLeft, double slotWidth, int slotCenterX,
+                                     int chartBottom, int usableBarWidth,
+                                     boolean rotateLabels, int labelStep) {
+            if (idx % labelStep != 0) return;
+            String label = truncateAuthor(author, (int) slotWidth, g2.getFontMetrics());
+            g2.setColor(UIManager.getColor("Label.foreground"));
+            g2.setFont(getFont().deriveFont(10f));
+            FontMetrics lfm = g2.getFontMetrics();
+            int labelW = lfm.stringWidth(label);
+
+            if (rotateLabels) {
+                AffineTransform orig = g2.getTransform();
+                double angle = -Math.PI / 4;
+                g2.translate(slotCenterX, chartBottom + 8);
+                g2.rotate(angle);
+                g2.drawString(label, 0, 0);
+                g2.setTransform(orig);
+            } else {
+                int lx = slotCenterX - labelW / 2;
+                g2.drawString(label, Math.max(0, lx), chartBottom + 14);
+            }
+        }
+
+        private void drawLegend(Graphics2D g2, int x, int y) {
+            g2.setFont(getFont().deriveFont(10f));
+            int legendX = x;
+            for (int i = 0; i < projectOrder.size(); i++) {
+                g2.setColor(BAR_COLORS[i % BAR_COLORS.length]);
+                g2.fillRect(legendX, y, 10, 10);
+                g2.setColor(UIManager.getColor("Label.foreground"));
+                g2.drawString(projectOrder.get(i), legendX + 13, y + 10);
+                legendX += 13 + g2.getFontMetrics().stringWidth(projectOrder.get(i)) + 15;
             }
         }
 
