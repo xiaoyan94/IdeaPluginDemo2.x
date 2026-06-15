@@ -13,7 +13,7 @@
     <depends>JavaScript</depends>
     <depends>com.intellij.modules.jsp.base</depends>
     <depends>com.intellij.jsp</depends>
-    <!-- 不再需要依赖 VCS 模块 -->
+        <!-- 不再需要依赖 VCS 模块 -->
     <!-- <depends>com.intellij.modules.vcs</depends> -->
 
     <resource-bundle>messages.MyBundle</resource-bundle>
@@ -129,6 +129,9 @@
         </toolWindow>
 
         <toolWindow id="SvnChangeAnalysisToolWindow" factoryClass="com.zhiyin.plugins.toolWindow.SvnChangeAnalysisToolWindowFactory" anchor="right" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+        </toolWindow>
+
+        <toolWindow id="SvnCommitLogAnalysisToolWindow" factoryClass="com.zhiyin.plugins.toolWindow.SvnCommitLogAnalysisToolWindowFactory" anchor="right" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
         </toolWindow>
 
         <codeInsight.lineMarkerProvider
@@ -260,6 +263,13 @@
                 class="com.zhiyin.plugins.actions.SvnChangeAnalysisAction" text="SVN 变更分析"
                 icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
                 description="分析各模块的 SVN 文件变更数量和提交时间范围">
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>
+
+        <action id="com.zhiyin.plugins.actions.SvnCommitLogAnalysisAction"
+                class="com.zhiyin.plugins.actions.SvnCommitLogAnalysisAction" text="SVN 提交日志深度分析"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                description="按日期和人员筛选SVN提交记录，统计分析并生成结构化Prompt">
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
 

@@ -34,6 +34,23 @@ public final class AppSettingsState implements PersistentStateComponent<AppSetti
   // Add the new field for the commit template
   public String commitMessageTemplate = "";
 
+  /**
+   * 多项目SVN本地目录路径配置，每行格式: 项目名=绝对路径
+   * 例如: CloudMES=D:/workspace/cloudmes
+   *       Fobrite=D:/workspace/fobrite
+   */
+  public String svnProjectPaths = "";
+
+  /**
+   * 最近的SVN日期范围查询 - 起始日期 (yyyy-MM-dd)
+   */
+  public String svnLastStartDate = "";
+
+  /**
+   * 最近的SVN日期范围查询 - 结束日期 (yyyy-MM-dd)
+   */
+  public String svnLastEndDate = "";
+
   public static AppSettingsState getInstance() {
     return ApplicationManager.getApplication().getService(AppSettingsState.class);
   }
