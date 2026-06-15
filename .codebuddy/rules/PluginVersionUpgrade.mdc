@@ -14,13 +14,3 @@ provider:
 
 ## 1. 修改 `gradle.properties`
 改 `pluginVersion` 为目标版本号
-
-## 2. 修改 `CHANGELOG.md`
-在 `## [Unreleased]` 下面插入变更内容（无需加版本号）：
-```markdown
-- 变更内容1
-- 变更内容2
-```
-
-## 3. 构建发布
-执行 `gradle buildPlugin` 即可生成新版插件 zip。
