@@ -45,6 +45,11 @@ final class AppSettingsConfigurable implements Configurable {
         isModified |= !mySettingsComponent.getCommitTemplateText().equals(settings.commitMessageTemplate);
         isModified |= !mySettingsComponent.getSvnProjectPathsText().equals(
                 settings.svnProjectPaths != null ? settings.svnProjectPaths : "");
+        isModified |= mySettingsComponent.getSvnIncludeCodeVolume() != settings.svnIncludeCodeVolumeStats;
+        isModified |= mySettingsComponent.getSvnRetryTimeout() != settings.svnRetryTimeoutSeconds;
+        isModified |= mySettingsComponent.getSvnDiffTimeout() != settings.svnDiffTimeoutSeconds;
+        isModified |= !mySettingsComponent.getSvnExcludeAuthorsText().equals(
+                settings.svnExcludeAuthors != null ? settings.svnExcludeAuthors : "");
         return isModified;
     }
 
@@ -56,6 +61,10 @@ final class AppSettingsConfigurable implements Configurable {
         // Save the new field's value
         settings.commitMessageTemplate = mySettingsComponent.getCommitTemplateText();
         settings.svnProjectPaths = mySettingsComponent.getSvnProjectPathsText();
+        settings.svnIncludeCodeVolumeStats = mySettingsComponent.getSvnIncludeCodeVolume();
+        settings.svnRetryTimeoutSeconds = mySettingsComponent.getSvnRetryTimeout();
+        settings.svnDiffTimeoutSeconds = mySettingsComponent.getSvnDiffTimeout();
+        settings.svnExcludeAuthors = mySettingsComponent.getSvnExcludeAuthorsText();
     }
 
     @Override
@@ -71,6 +80,10 @@ final class AppSettingsConfigurable implements Configurable {
         // Load the saved value into the text field
         mySettingsComponent.setCommitTemplateText(settings.commitMessageTemplate);
         mySettingsComponent.setSvnProjectPathsText(settings.svnProjectPaths);
+        mySettingsComponent.setSvnIncludeCodeVolume(settings.svnIncludeCodeVolumeStats);
+        mySettingsComponent.setSvnRetryTimeout(settings.svnRetryTimeoutSeconds);
+        mySettingsComponent.setSvnDiffTimeout(settings.svnDiffTimeoutSeconds);
+        mySettingsComponent.setSvnExcludeAuthorsText(settings.svnExcludeAuthors);
     }
 
     @Override

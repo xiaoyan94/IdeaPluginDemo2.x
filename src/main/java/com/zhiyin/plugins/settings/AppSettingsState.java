@@ -51,6 +51,31 @@ public final class AppSettingsState implements PersistentStateComponent<AppSetti
    */
   public String svnLastEndDate = "";
 
+  /**
+   * 统计SVN提交日志时是否包含代码量统计（svn diff，较慢）。
+   * 默认开启，关闭后可显著提升分析速度。
+   */
+  public boolean svnIncludeCodeVolumeStats = true;
+
+  /**
+   * 重试失败项时，单条 svn diff 的超时时间（秒）。
+   * 默认 3s；当网络/服务器较慢导致 3s 频繁超时时，可在设置中调大。
+   */
+  public int svnRetryTimeoutSeconds = 3;
+
+  /**
+   * 主分析（首次统计代码量）时，单条 svn diff 的超时时间（秒）。
+   * 默认 3s；当网络/服务器较慢导致频繁超时时，可在设置中调大。
+   */
+  public int svnDiffTimeoutSeconds = 3;
+
+  /**
+   * 统计时排除的作者列表（多人），以逗号/分号/空格/换行分隔。
+   * 例如: zhangsan,lisi,wangwu
+   * 这些作者的提交在统计（提交数、代码量、图表、明细）中会被忽略。
+   */
+  public String svnExcludeAuthors = "";
+
   public static AppSettingsState getInstance() {
     return ApplicationManager.getApplication().getService(AppSettingsState.class);
   }
