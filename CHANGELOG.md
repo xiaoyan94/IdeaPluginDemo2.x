@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-07-20
+
 - 增强 Java 方法引用解析能力
 
 ## [2.0.10] - 2026-07-20
@@ -138,7 +140,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.10...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.11...HEAD
+[2.0.11]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.9...v2.0.10
 [2.0.9]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.7...v2.0.8
