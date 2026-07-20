@@ -52,6 +52,7 @@ public class Constants {
             "bizCommonService.insertMocDataAndExtend",
             "bizCommonService.insertMocExtendData",
             "bizCommonService.updateMocData",
+            "bizCommonService.updateMocData2",
             "bizCommonService.updateMocDataAndExtend",
             "bizCommonService.findMocById",
             "bizCommonService.findMocExtendById",

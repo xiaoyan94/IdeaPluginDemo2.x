@@ -61,26 +61,8 @@ public class JavaToMocLineMarkerProvider extends RelatedItemLineMarkerProvider {
             return false;
         }
         PsiReferenceExpression psiReferenceExpression = psiMethodCallExpression.getMethodExpression();
-        List<String> expectedMethods = Arrays.asList(
-                "bizCommonService.queryMocDaoData",
-                "bizCommonService.queryMocDaoRawData",
-                "bizCommonService.insertMocData",
-                "bizCommonService.insertMocDataAndExtend",
-                "bizCommonService.insertMocExtendData",
-                "bizCommonService.updateMocData",
-                "bizCommonService.updateMocDataAndExtend",
-                "bizCommonService.findMocById",
-                "bizCommonService.findMocExtendById",
-                "bizCommonService.findMocDataById",
-                "bizCommonService.findMocDataAndExtendById",
-                "bizCommonService.deleteSoftMocData",
-                "bizCommonService.deleteMocData",
-                "bizCommonService.deleteMocDataAndExtend",
-                "bizCommonService.queryMocDaoRawDataAndExtend",
-                "bizCommonService.queryMocDaoDataAndExtend"
-        );
 
-        if (expectedMethods.stream().noneMatch(psiReferenceExpression::textMatches)) {
+        if (Constants.BIZ_COMMON_SERVICE_METHODS.stream().noneMatch(psiReferenceExpression::textMatches)) {
             return false;
         }
         PsiLiteralExpression literalExpression;
