@@ -23,16 +23,24 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.geom.AffineTransform;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -60,6 +68,8 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JButton analyzeCurrentButton = new JButton("分析当前项目");
     private final JButton analyzeSelectedButton = new JButton("分析选中项目");
     private final JButton cancelButton = new JButton("取消");
+    private final JButton retryFailedButton = new JButton("重试失败项");
+    private final JButton viewFailedButton = new JButton("查看失败项");
     private final JLabel statusLabel = new JLabel("就绪");
     private final JProgressBar progressBar = new JProgressBar();
 
@@ -72,7 +82,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JBTable logTable = new JBTable(logTableModel);
 
     // ---- 统计表格 ----
-    private final String[] statColumnNames = {"作者", "项目", "提交次数", "变更文件总数", "代码量", "占比"};
+    private final String[] statColumnNames = {"作者", "项目", "提交次数", "变更文件总数", "代码量", "提交次数占比", "代码量占比"};
     private final DefaultTableModel statTableModel = new DefaultTableModel(statColumnNames, 0) {
         @Override
         public boolean isCellEditable(int row, int column) { return false; }
@@ -89,6 +99,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private final JComboBox<String> reportTypeCombo = new JComboBox<>(new String[]{"日报", "周报", "月度总结", "年中总结", "年度总结"});
     private final JCheckBox includeDetailCheck = new JCheckBox("包含详细变更路径", true);
     private final JCheckBox includeStatsCheck = new JCheckBox("包含统计摘要", true);
+    private final JCheckBox includeCodeVolumeCheck = new JCheckBox("包含代码量统计", true);
 
     // ---- 项目多选 ----
     private final JButton projectSelectBtn = new JButton("选择项目...");
@@ -102,6 +113,18 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private List<SvnCommitRecord> displayedRecords = new ArrayList<>();
     private Map<String, AuthorStats> displayedStats = new LinkedHashMap<>();
     private final AtomicBoolean analysisRunning = new AtomicBoolean(false);
+    // 当前后台任务的进度指示，供"取消"按钮主动取消（indicator.cancel()）
+    private volatile ProgressIndicator currentIndicator = null;
+
+    // ---- 失败重试：记录代码量统计失败的提交及其工作目录/匹配文件路径/失败原因 ----
+    private final Map<SvnCommitRecord, String> failedWorkDirMap = new LinkedHashMap<>();
+    private final Map<SvnCommitRecord, List<String>> failedMatchingPathsMap = new LinkedHashMap<>();
+    private final Map<SvnCommitRecord, String> failedReasonMap = new LinkedHashMap<>();
+
+    // ---- 缓存：工作目录 → 其在仓库中的相对路径前缀（如 /branches/HaichengMes/webproj）----
+    // svn log -v 返回的是仓库绝对路径（如 /branches/HaichengMes/webproj/xxx/Foo.java），
+    // 而 svn diff 需要工作副本相对路径（如 xxx/Foo.java），需按此前缀转换。
+    private final Map<String, String> wcRepoPrefixCache = new ConcurrentHashMap<>();
 
     // ---- 缓存：项目的作者列表 ----
     private final Set<String> allAuthorsCache = new LinkedHashSet<>();
@@ -172,13 +195,25 @@ public class SvnCommitLogAnalysisToolWindowUI {
         authorCombo.setToolTipText("按提交人筛选，可直接输入");
 
         // 表格排序
+        // 数值/百分比列按数值大小排序，避免字符串字典序（如 "10" < "9"、"10%" < "9%"、"-" 等问题）
+        Comparator<Object> numericComparator = (a, b) ->
+                Double.compare(parseNumericCell(a), parseNumericCell(b));
+
         TableRowSorter<DefaultTableModel> logSorter = new TableRowSorter<>(logTableModel);
         logTable.setRowSorter(logSorter);
         logTable.setFillsViewportHeight(true);
+        // 版本号、变更文件数、代码量
+        for (int col : new int[]{0, 5, 6}) {
+            logSorter.setComparator(col, numericComparator);
+        }
 
         TableRowSorter<DefaultTableModel> statSorter = new TableRowSorter<>(statTableModel);
         statTable.setRowSorter(statSorter);
         statTable.setFillsViewportHeight(true);
+        // 提交次数、变更文件总数、代码量、提交次数占比、代码量占比
+        for (int col : new int[]{2, 3, 4, 5, 6}) {
+            statSorter.setComparator(col, numericComparator);
+        }
 
         // Ctrl+C 复制
         registerTableCopyAction(logTable);
@@ -188,6 +223,12 @@ public class SvnCommitLogAnalysisToolWindowUI {
         analyzeCurrentButton.addActionListener(e -> performAnalysisForCurrent());
         analyzeSelectedButton.addActionListener(e -> performAnalysisForSelected());
         cancelButton.addActionListener(e -> cancelAnalysis());
+        retryFailedButton.addActionListener(e -> retryFailedCommits());
+        retryFailedButton.setEnabled(false);
+        retryFailedButton.setToolTipText("对代码量统计失败的提交进行一键批量重试");
+        viewFailedButton.addActionListener(e -> viewFailedCommits());
+        viewFailedButton.setEnabled(false);
+        viewFailedButton.setToolTipText("查看代码量统计失败的提交及其原因，并提供可复制的 svn 命令");
         copyPromptButton.addActionListener(e -> copyPromptToClipboard());
         authorCombo.addActionListener(e -> onAuthorFilterChanged());
 
@@ -290,6 +331,9 @@ public class SvnCommitLogAnalysisToolWindowUI {
         btnPanel.add(analyzeCurrentButton);
         btnPanel.add(analyzeSelectedButton);
         btnPanel.add(cancelButton);
+        btnPanel.add(includeCodeVolumeCheck);
+        btnPanel.add(retryFailedButton);
+        btnPanel.add(viewFailedButton);
         btnPanel.add(progressBar);
         btnPanel.add(statusLabel);
         panel.add(btnPanel, gbc);
@@ -417,6 +461,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
         if (settings.svnLastEndDate != null && !settings.svnLastEndDate.isEmpty()) {
             endDateField.setText(settings.svnLastEndDate);
         }
+        includeCodeVolumeCheck.setSelected(settings.svnIncludeCodeVolumeStats);
     }
 
     /**
@@ -588,6 +633,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
         AppSettingsState settings = AppSettingsState.getInstance();
         settings.svnLastStartDate = startDateField.getText().trim();
         settings.svnLastEndDate = endDateField.getText().trim();
+        settings.svnIncludeCodeVolumeStats = includeCodeVolumeCheck.isSelected();
     }
 
     // ================================================================
@@ -660,20 +706,32 @@ public class SvnCommitLogAnalysisToolWindowUI {
         promptArea.setText("");
         commitRecords.clear();
         authorStatsMap.clear();
+        failedWorkDirMap.clear();
+        failedMatchingPathsMap.clear();
+        failedReasonMap.clear();
+        wcRepoPrefixCache.clear();
+        retryFailedButton.setEnabled(false);
+        viewFailedButton.setEnabled(false);
 
         analysisRunning.set(true);
         analyzeCurrentButton.setEnabled(false);
         analyzeSelectedButton.setEnabled(false);
         cancelButton.setEnabled(true);
         progressBar.setVisible(true);
-        progressBar.setIndeterminate(true);
+        progressBar.setIndeterminate(false);
+        progressBar.setValue(0);
+        progressBar.setString("0%");
         statusLabel.setText("正在分析 SVN 提交日志... [" + configs.size() + " 个项目]");
 
         // 使用 IntelliJ 标准的后台任务 API（支持取消、进度反馈）
         ProgressManager.getInstance().run(new Task.Backgroundable(project, "SVN 提交日志分析", true) {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
+                currentIndicator = indicator;
                 try {
+                    // 读取用户配置的主分析单条 diff 超时（秒），非法/未配置回退 3s
+                    final long diffTimeoutSeconds = AppSettingsState.getInstance().svnDiffTimeoutSeconds > 0
+                            ? AppSettingsState.getInstance().svnDiffTimeoutSeconds : 3;
                     // Step 1: 遍历所有项目执行 svn log
                     List<SvnCommitRecord> allRecords = new ArrayList<>();
                     List<SvnCommitRecord> allErrors = new ArrayList<>();
@@ -681,8 +739,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
                     for (int i = 0; i < configs.size(); i++) {
                         ProjectConfig cfg = configs.get(i);
-                        indicator.setText("正在查询: " + cfg.name + "...");
-                        indicator.setFraction(0.1f + i * perProjectFraction);
+                        updateAnalysisProgress(indicator, 0.1 + i * perProjectFraction, "正在查询: " + cfg.name + "...");
                         if (indicator.isCanceled()) return;
 
                         try {
@@ -695,6 +752,13 @@ public class SvnCommitLogAnalysisToolWindowUI {
                         }
                     }
 
+                    // 排除指定作者（设置项 svnExcludeAuthors，逗号/分号/空格/换行分隔，忽略大小写）
+                    Set<String> excludeAuthors = parseExcludeAuthors();
+                    if (!excludeAuthors.isEmpty()) {
+                        allRecords.removeIf(r -> r.author != null && excludeAuthors.contains(r.author.toLowerCase()));
+                        allAuthorsCache.removeIf(a -> a != null && excludeAuthors.contains(a.toLowerCase()));
+                    }
+
                     if (indicator.isCanceled()) return;
 
                     if (allRecords.isEmpty()) {
@@ -703,8 +767,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
                     }
 
                     // Step 2: 按作者过滤
-                    indicator.setText("正在按作者筛选...");
-                    indicator.setFraction(0.65f);
+                    updateAnalysisProgress(indicator, 0.65, "正在按作者筛选...");
                     final List<SvnCommitRecord> filteredRecords = (authorFilter != null && !authorFilter.isEmpty())
                             ? allRecords.stream()
                                     .filter(r -> r.author.equalsIgnoreCase(authorFilter))
@@ -714,9 +777,6 @@ public class SvnCommitLogAnalysisToolWindowUI {
                     if (indicator.isCanceled()) return;
 
                     // Step 3: 计算代码量（svn diff）
-                    indicator.setText("正在统计代码量...");
-                    indicator.setFraction(0.68f);
-
                     // 构建项目名→路径映射
                     Map<String, String> projectNameToPath = new LinkedHashMap<>();
                     for (ProjectConfig cfg : configs) {
@@ -727,52 +787,103 @@ public class SvnCommitLogAnalysisToolWindowUI {
                     int commitsWithCode = 0;
                     int diffFailures = 0;
                     int checkedCommits = 0; // 有匹配文件的提交数
-                    for (int i = 0; i < filteredRecords.size(); i++) {
-                        if (indicator.isCanceled()) return;
-                        SvnCommitRecord r = filteredRecords.get(i);
-                        if (i % Math.max(1, filteredRecords.size() / 20) == 0) {
-                            indicator.setFraction(0.68f + 0.07f * i / Math.max(1, filteredRecords.size()));
-                            indicator.setText("正在统计代码量... " + (i + 1) + "/" + filteredRecords.size());
-                        }
-                        // 先快速检查是否有匹配的文件变更
-                        String workDir = projectNameToPath.get(r.projectName);
-                        if (workDir == null) {
-                            // 兼容旧数据：没有项目名对应路径的跳过
-                            workDir = projectNameToPath.get("当前项目");
-                        }
-                        if (workDir == null) continue;
 
-                        boolean hasMatchingFile = false;
-                        for (String cp : r.changedPaths) {
-                            // changedPaths 格式: "M /trunk/src/File.java"（action + space + path）
-                            String filePath = cp.contains(" ") ? cp.substring(cp.indexOf(' ') + 1) : cp;
-                            if (matchesCodeVolumePattern(filePath)) {
-                                hasMatchingFile = true;
-                                break;
+                    if (includeCodeVolumeCheck.isSelected()) {
+                        updateAnalysisProgress(indicator, 0.68, "正在统计代码量...");
+
+                        // 预筛需要统计代码量的提交（含匹配文件的），并记录其工作目录与匹配文件路径
+                        // D: 同时收集匹配文件的仓库相对路径，传给 computeCommitCodeVolume 做定向 diff
+                        List<SvnCommitRecord> toDiff = new ArrayList<>();
+                        Map<SvnCommitRecord, String> workDirMap = new LinkedHashMap<>();
+                        Map<SvnCommitRecord, List<String>> matchingPathsMap = new LinkedHashMap<>();
+                        Map<SvnCommitRecord, String> reasonMap = new LinkedHashMap<>();
+                        for (SvnCommitRecord r : filteredRecords) {
+                            String workDir = projectNameToPath.get(r.projectName);
+                            if (workDir == null) {
+                                // 兼容旧数据：没有项目名对应路径的跳过
+                                workDir = projectNameToPath.get("当前项目");
                             }
-                        }
-                        if (hasMatchingFile) {
-                            checkedCommits++;
-                            try {
-                                int vol = computeCommitCodeVolume(workDir,
-                                        r.revision.startsWith("r") ? r.revision.substring(1) : r.revision,
-                                        indicator);
-                                r.codeVolume = Math.max(0, vol); // -1 视为 0（diff 失败）
-                                if (vol > 0) {
-                                    totalCodeVolume += vol;
-                                    commitsWithCode++;
-                                } else if (vol < 0) {
-                                    diffFailures++;
+                            if (workDir == null) continue;
+
+                            List<String> matchingPaths = new ArrayList<>();
+                            for (String cp : r.changedPaths) {
+                                // changedPaths 格式: "M /trunk/src/File.java"（action + space + path）
+                                String filePath = cp.contains(" ") ? cp.substring(cp.indexOf(' ') + 1) : cp;
+                                if (matchesCodeVolumePattern(filePath)) {
+                                    matchingPaths.add(filePath);
                                 }
-                            } catch (Exception e) {
-                                diffFailures++; // 异常也视为 diff 失败
+                            }
+                            if (!matchingPaths.isEmpty()) {
+                                toDiff.add(r);
+                                workDirMap.put(r, workDir);
+                                matchingPathsMap.put(r, matchingPaths);
                             }
                         }
+                        checkedCommits = toDiff.size();
+
+                        if (toDiff.isEmpty()) {
+                            updateAnalysisProgress(indicator, 0.75, null);
+                        } else {
+                            // 优化 A：有界线程池并行执行 svn diff，墙钟时间约降为 1/池大小
+                            int poolSize = Math.min(6, toDiff.size());
+                            ExecutorService pool = Executors.newFixedThreadPool(poolSize);
+                            try {
+                                List<Future<CodeVolumeResult>> futures = new ArrayList<>(toDiff.size());
+                                for (final SvnCommitRecord r : toDiff) {
+                                    final String wd = workDirMap.get(r);
+                                    final String rev = r.revision.startsWith("r")
+                                            ? r.revision.substring(1) : r.revision;
+                                    final List<String> mp = matchingPathsMap.get(r);
+                                    futures.add(pool.submit(() -> computeCommitCodeVolume(wd, rev, mp, diffTimeoutSeconds, indicator)));
+                                }
+                                // 在主后台线程中按完成顺序汇总，保证 indicator 更新线程安全
+                                int done = 0;
+                                for (int k = 0; k < toDiff.size(); k++) {
+                                    if (indicator.isCanceled()) break;
+                                    SvnCommitRecord r = toDiff.get(k);
+                                    CodeVolumeResult cvr;
+                                    try {
+                                        cvr = futures.get(k).get();
+                                    } catch (Exception e) {
+                                        cvr = new CodeVolumeResult();
+                                        cvr.volume = -1;
+                                        cvr.reason = "任务执行异常: " + e.getMessage();
+                                    }
+                                    r.codeVolume = cvr.volume; // 保留 -1 标记失败，供"重试失败项"识别；展示层对 <=0 统一显示 "-"
+                                    reasonMap.put(r, cvr.reason); // 暂存失败原因，供"查看失败项"展示
+                                    if (cvr.volume > 0) {
+                                        totalCodeVolume += cvr.volume;
+                                        commitsWithCode++;
+                                    } else if (cvr.volume < 0) {
+                                        diffFailures++;
+                                    }
+                                    done++;
+                                    updateAnalysisProgress(indicator, 0.68 + 0.07 * done / toDiff.size(),
+                                            "正在统计代码量... " + done + "/" + toDiff.size());
+                                }
+                            } finally {
+                                pool.shutdownNow();
+                            }
+
+                            // 收集失败的提交，供"重试失败项"/"查看失败项"使用
+                            failedWorkDirMap.clear();
+                            failedMatchingPathsMap.clear();
+                            failedReasonMap.clear();
+                            for (SvnCommitRecord r : toDiff) {
+                                if (r.codeVolume < 0) {
+                                    failedWorkDirMap.put(r, workDirMap.get(r));
+                                    failedMatchingPathsMap.put(r, matchingPathsMap.get(r));
+                                    failedReasonMap.put(r, reasonMap.getOrDefault(r, "未知原因"));
+                                }
+                            }
+                        }
+                    } else {
+                        // 跳过代码量统计：所有提交代码量保持 0（下游展示已对 0 做 "-" 兜底）
+                        updateAnalysisProgress(indicator, 0.75, "已跳过代码量统计");
                     }
 
                     if (indicator.isCanceled()) return;
-                    indicator.setText("正在统计分析...");
-                    indicator.setFraction(0.80f);
+                    updateAnalysisProgress(indicator, 0.80, "正在统计分析...");
 
                     // Step 4: 统计分析
                     commitRecords = filteredRecords;
@@ -785,12 +896,16 @@ public class SvnCommitLogAnalysisToolWindowUI {
                     final Map<String, Map<String, Integer>> projectByVolume = computePerProjectChartData(filteredRecords, true);
 
                     if (indicator.isCanceled()) return;
-                    indicator.setText("正在更新界面...");
-                    indicator.setFraction(0.95);
+                    updateAnalysisProgress(indicator, 0.95, "正在更新界面...");
 
                     // Step 5: 更新 UI（必须在 EDT 线程）
+                    final boolean codeVolumeSkipped = !includeCodeVolumeCheck.isSelected();
                     final String statusMsg;
-                    if (diffFailures > 0 && diffFailures == checkedCommits) {
+                    if (codeVolumeSkipped) {
+                        statusMsg = String.format(
+                                "完成 - %d 个项目，共 %d 条记录，%d 位作者 | 代码量统计已跳过",
+                                configs.size(), filteredRecords.size(), authorStatsMap.size());
+                    } else if (diffFailures > 0 && diffFailures == checkedCommits) {
                         statusMsg = String.format(
                                 "完成 - %d 个项目，共 %d 条记录 | 代码量统计全部失败(%d/%d)，请检查 SVN 工作目录是否有效",
                                 configs.size(), filteredRecords.size(), diffFailures, checkedCommits);
@@ -810,15 +925,19 @@ public class SvnCommitLogAnalysisToolWindowUI {
                         displayedStats = authorStatsMap;
                         updateLogTable(filteredRecords);
                         updateStatsTable(authorStatsMap);
+                        chartPanel.setVolumeEnabled(!codeVolumeSkipped);
                         chartPanel.setAllData(stackedByCommits, stackedByVolume, projectByCommits, projectByVolume);
                         refreshAuthorCombo();
                         refreshPrompt();
+                        retryFailedButton.setEnabled(!failedWorkDirMap.isEmpty());
+                        viewFailedButton.setEnabled(!failedWorkDirMap.isEmpty());
                         updateUIStatus(statusMsg, false);
                     });
 
                 } catch (Exception ex) {
                     updateUIStatus("分析失败: " + ex.getMessage(), true);
                 } finally {
+                    currentIndicator = null;
                     ApplicationManager.getApplication().invokeLater(() -> {
                         analysisRunning.set(false);
                         analyzeCurrentButton.setEnabled(true);
@@ -837,11 +956,329 @@ public class SvnCommitLogAnalysisToolWindowUI {
         });
     }
 
+    /**
+     * 同步更新进度：同时驱动 IDEA 后台任务进度条与工具窗口自有进度条。
+     */
+    private void updateAnalysisProgress(ProgressIndicator indicator, double fraction, String text) {
+        if (indicator != null) {
+            if (text != null) indicator.setText(text);
+            indicator.setFraction(fraction);
+        }
+        final int pct = (int) Math.round(fraction * 100.0);
+        final String label = pct + "%";
+        ApplicationManager.getApplication().invokeLater(() -> {
+            progressBar.setIndeterminate(false);
+            progressBar.setValue(pct);
+            progressBar.setString(label);
+        });
+    }
+
     private void cancelAnalysis() {
         if (analysisRunning.get()) {
-            // ProgressManager 会自动处理取消
             cancelButton.setEnabled(false);
             statusLabel.setText("正在取消...");
+            // 真正触发后台任务的取消，使 indicator.isCanceled() 立即返回 true 并回调 onCancel
+            ProgressIndicator ind = currentIndicator;
+            if (ind != null) {
+                ind.cancel();
+            }
+        }
+    }
+
+    /**
+     * 一键批量重试代码量统计失败的提交
+     * <p>
+     * 仅对 {@link #failedWorkDirMap} 中记录的失败项重跑定向 diff（D）+ 3s 超时重试（E），
+     * 完成后刷新表格/图表/Prompt，并保留仍失败的记录供再次重试。
+     * </p>
+     */
+    private void retryFailedCommits() {
+        if (analysisRunning.get() || failedWorkDirMap.isEmpty()) return;
+
+        // 快照当前失败项（重跑过程中映射会被重建）
+        final List<SvnCommitRecord> toRetry = new ArrayList<>(failedWorkDirMap.keySet());
+        final int total = toRetry.size();
+        // 读取用户配置的重试超时（秒），非法/未配置回退 3s
+        final long retryTimeoutSeconds = AppSettingsState.getInstance().svnRetryTimeoutSeconds > 0
+                ? AppSettingsState.getInstance().svnRetryTimeoutSeconds : 3;
+        statusLabel.setText("正在重试失败的代码量统计... (" + total + " 项, 超时 " + retryTimeoutSeconds + "s/条)");
+
+        analysisRunning.set(true);
+        analyzeCurrentButton.setEnabled(false);
+        analyzeSelectedButton.setEnabled(false);
+        cancelButton.setEnabled(true);
+        retryFailedButton.setEnabled(false);
+        progressBar.setVisible(true);
+        progressBar.setIndeterminate(false);
+        progressBar.setValue(0);
+        progressBar.setString("0%");
+
+        ProgressManager.getInstance().run(new Task.Backgroundable(project, "重试代码量统计", true) {
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                try {
+                    int poolSize = Math.min(6, toRetry.size());
+                    ExecutorService pool = Executors.newFixedThreadPool(poolSize);
+                    Map<SvnCommitRecord, String> retryReasonMap = new LinkedHashMap<>();
+                    try {
+                        List<Future<CodeVolumeResult>> futures = new ArrayList<>(toRetry.size());
+                        for (final SvnCommitRecord r : toRetry) {
+                            final String wd = failedWorkDirMap.get(r);
+                            final String rev = r.revision.startsWith("r")
+                                    ? r.revision.substring(1) : r.revision;
+                            final List<String> mp = failedMatchingPathsMap.getOrDefault(r, Collections.emptyList());
+                            futures.add(pool.submit(() -> computeCommitCodeVolume(wd, rev, mp, retryTimeoutSeconds, indicator)));
+                        }
+                        // 主后台线程按完成顺序汇总，保证 indicator 更新线程安全
+                        int done = 0;
+                        for (int k = 0; k < toRetry.size(); k++) {
+                            if (indicator.isCanceled()) break;
+                            SvnCommitRecord r = toRetry.get(k);
+                            CodeVolumeResult cvr;
+                            try {
+                                cvr = futures.get(k).get();
+                            } catch (Exception e) {
+                                cvr = new CodeVolumeResult();
+                                cvr.volume = -1; // 任务异常视为失败
+                                cvr.reason = "任务执行异常: " + e.getMessage();
+                            }
+                            r.codeVolume = cvr.volume; // 保留 -1 标记仍失败，供再次重试识别；展示层对 <=0 统一显示 "-"
+                            retryReasonMap.put(r, cvr.reason);
+                            done++;
+                            updateAnalysisProgress(indicator, 0.1 + 0.9 * done / total, "正在重试代码量... " + done + "/" + total);
+                        }
+                    } finally {
+                        pool.shutdownNow();
+                    }
+
+                    // 重建失败映射：仅保留仍失败的提交
+                    Map<SvnCommitRecord, String> stillFailed = new LinkedHashMap<>();
+                    Map<SvnCommitRecord, List<String>> stillFailedMp = new LinkedHashMap<>();
+                    Map<SvnCommitRecord, String> stillFailedReason = new LinkedHashMap<>();
+                    for (Map.Entry<SvnCommitRecord, String> e : failedWorkDirMap.entrySet()) {
+                        if (e.getKey().codeVolume < 0) {
+                            stillFailed.put(e.getKey(), e.getValue());
+                            stillFailedMp.put(e.getKey(), failedMatchingPathsMap.get(e.getKey()));
+                            stillFailedReason.put(e.getKey(), retryReasonMap.getOrDefault(e.getKey(), "未知原因"));
+                        }
+                    }
+                    failedWorkDirMap.clear();
+                    failedWorkDirMap.putAll(stillFailed);
+                    failedMatchingPathsMap.clear();
+                    failedMatchingPathsMap.putAll(stillFailedMp);
+                    failedReasonMap.clear();
+                    failedReasonMap.putAll(stillFailedReason);
+
+                    final int succeeded = total - failedWorkDirMap.size();
+                    final int remaining = failedWorkDirMap.size();
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        // 复用现有展示刷新逻辑（按当前作者筛选刷新表格/图表/Prompt）
+                        onAuthorFilterChanged();
+                        retryFailedButton.setEnabled(!failedWorkDirMap.isEmpty());
+                        viewFailedButton.setEnabled(!failedWorkDirMap.isEmpty());
+                        String msg = String.format("重试完成 - %d/%d 成功%s",
+                                succeeded, total,
+                                remaining > 0 ? "，" + remaining + " 项仍失败（可再次重试）" : "");
+                        statusLabel.setText(msg);
+                        statusLabel.setForeground(UIManager.getColor("Label.infoForeground"));
+                    });
+                } catch (Exception ex) {
+                    updateUIStatus("重试失败: " + ex.getMessage(), true);
+                } finally {
+                    currentIndicator = null;
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        analysisRunning.set(false);
+                        analyzeCurrentButton.setEnabled(true);
+                        analyzeSelectedButton.setEnabled(true);
+                        cancelButton.setEnabled(false);
+                        progressBar.setVisible(false);
+                    });
+                }
+            }
+
+            @Override
+            public void onCancel() {
+                analysisRunning.set(false);
+                updateUIStatus("重试已取消", false);
+            }
+        });
+    }
+
+    // ================================================================
+    //  查看失败项（弹窗列出失败记录 / 原因 / 可复制 svn 命令）
+    // ================================================================
+
+    /**
+     * 打开"查看失败项"对话框：列出代码量统计失败的提交、失败原因，
+     * 并为每条记录提供可直接复制执行的 svn diff 命令（在对应工作目录下执行）。
+     */
+    private void viewFailedCommits() {
+        if (failedWorkDirMap.isEmpty()) {
+            MyPluginMessages.showWarning("提示", "当前没有代码量统计失败的提交", project);
+            return;
+        }
+        ApplicationManager.getApplication().invokeLater(this::showFailedCommitsDialog);
+    }
+
+    private void showFailedCommitsDialog() {
+        final List<SvnCommitRecord> failed = new ArrayList<>(failedWorkDirMap.keySet());
+
+        // 预构建每行的 svn 命令与工作目录（保持与失败项相同顺序）
+        final List<String> workDirs = new ArrayList<>();
+        final List<String> commands = new ArrayList<>();
+        for (SvnCommitRecord r : failed) {
+            String wd = failedWorkDirMap.get(r);
+            String rev = r.revision.startsWith("r") ? r.revision.substring(1) : r.revision;
+            List<String> mp = failedMatchingPathsMap.getOrDefault(r, Collections.emptyList());
+            workDirs.add(wd);
+            commands.add(buildSvnDiffCommand(wd, rev, mp));
+        }
+
+        JDialog dialog = new JDialog(
+                (Frame) SwingUtilities.getWindowAncestor(viewFailedButton),
+                "代码量统计失败的提交 (" + failed.size() + ")", true);
+        dialog.setLayout(new BorderLayout(8, 8));
+        dialog.setPreferredSize(new Dimension(840, 480));
+
+        // 顶部说明
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
+        JLabel tip = new JLabel("<html>以下提交代码量统计失败。复制对应 <b>svn diff</b> 命令并在其<b>工作目录</b>下手动执行，即可查看该次提交的代码变更。</html>");
+        header.add(tip, BorderLayout.CENTER);
+        dialog.add(header, BorderLayout.NORTH);
+
+        // 表格
+        String[] cols = {"版本", "作者", "日期", "失败原因", "SVN 命令", ""};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // 复制由鼠标事件处理，避免进入编辑态
+            }
+        };
+        for (int i = 0; i < failed.size(); i++) {
+            SvnCommitRecord r = failed.get(i);
+            model.addRow(new Object[]{
+                    r.revision,
+                    r.author,
+                    r.displayDate,
+                    failedReasonMap.getOrDefault(r, "未知原因"),
+                    commands.get(i),
+                    "复制"
+            });
+        }
+        JBTable table = new JBTable(model);
+        table.setRowHeight(60);
+        table.getColumnModel().getColumn(0).setPreferredWidth(70);
+        table.getColumnModel().getColumn(1).setPreferredWidth(80);
+        table.getColumnModel().getColumn(2).setPreferredWidth(90);
+        table.getColumnModel().getColumn(3).setPreferredWidth(220);
+        table.getColumnModel().getColumn(4).setPreferredWidth(330);
+        table.getColumnModel().getColumn(5).setPreferredWidth(50);
+        table.getColumnModel().getColumn(4).setCellRenderer(new CommandCellRenderer());
+        table.getColumnModel().getColumn(5).setCellRenderer(new ButtonRenderer());
+
+        // 单击命令单元格或"复制"按钮即复制对应命令
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int row = table.rowAtPoint(e.getPoint());
+                int col = table.columnAtPoint(e.getPoint());
+                if (row >= 0 && (col == 4 || col == 5)) {
+                    copyText(commands.get(row));
+                }
+            }
+        });
+
+        JBScrollPane scroll = new JBScrollPane(table);
+        scroll.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        dialog.add(scroll, BorderLayout.CENTER);
+
+        // 底部工具栏
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
+        JLabel hint = new JLabel("提示：单击命令单元格或\"复制\"按钮可复制单条命令");
+        hint.setForeground(UIManager.getColor("Label.disabledForeground"));
+        footer.add(hint, BorderLayout.WEST);
+        JPanel rightBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        JButton copyAll = new JButton("复制全部命令");
+        copyAll.setIcon(AllIcons.Actions.Copy);
+        JButton close = new JButton("关闭");
+        copyAll.addActionListener(e -> copyText(buildAllCommands(workDirs, commands)));
+        close.addActionListener(e -> dialog.dispose());
+        rightBtns.add(copyAll);
+        rightBtns.add(close);
+        footer.add(rightBtns, BorderLayout.EAST);
+        dialog.add(footer, BorderLayout.SOUTH);
+
+        dialog.pack();
+        dialog.setLocationRelativeTo(dialog.getOwner());
+        dialog.setVisible(true);
+    }
+
+    /** 构建单条 svn diff 命令（定向 diff，路径转为工作副本相对路径） */
+    private String buildSvnDiffCommand(String workDir, String revision, List<String> matchingPaths) {
+        StringBuilder sb = new StringBuilder("svn diff -c ").append(revision);
+        if (matchingPaths != null) {
+            for (String mp : matchingPaths) {
+                String t = toWcRelativePath(workDir, mp);
+                if (!t.isEmpty()) sb.append(" \"").append(t).append("\"");
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 构建"复制全部"命令块：按工作目录分组，附 cd 前缀，便于批量执行 */
+    private static String buildAllCommands(List<String> workDirs, List<String> commands) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < commands.size(); i++) {
+            if (i > 0) sb.append("\n\n");
+            sb.append("# 工作目录: ").append(workDirs.get(i)).append("\n");
+            sb.append("cd \"").append(workDirs.get(i)).append("\"\n");
+            sb.append(commands.get(i));
+        }
+        return sb.toString();
+    }
+
+    /** 复制文本到系统剪贴板并提示 */
+    private void copyText(String text) {
+        if (text == null || text.isEmpty()) return;
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
+        MyPluginMessages.showInfo("已复制", "svn 命令已复制到剪贴板", project);
+    }
+
+    /** 命令列渲染：等宽字体 + 自动换行 */
+    private static class CommandCellRenderer extends JTextArea implements TableCellRenderer {
+        CommandCellRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setEditable(false);
+            setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+            setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                       boolean isSelected, boolean hasFocus,
+                                                       int row, int column) {
+            setText(value == null ? "" : value.toString());
+            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
+            return this;
+        }
+    }
+
+    /** "复制"按钮列渲染 */
+    private static class ButtonRenderer extends JButton implements TableCellRenderer {
+        ButtonRenderer() {
+            setText("复制");
+            setMargin(new Insets(0, 4, 0, 4));
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                                                       boolean isSelected, boolean hasFocus,
+                                                       int row, int column) {
+            return this;
         }
     }
 
@@ -873,26 +1310,49 @@ public class SvnCommitLogAnalysisToolWindowUI {
         Process process = pb.start();
         StringBuilder xmlOutput = new StringBuilder();
 
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            int lineCount = 0;
-            while ((line = reader.readLine()) != null) {
-                xmlOutput.append(line).append('\n');
-                lineCount++;
-                // 每 100 行检查一次取消状态
-                if (lineCount % 100 == 0 && indicator.isCanceled()) {
-                    process.destroyForcibly();
-                    return records;
+        // 在独立线程中读取输出，主线程轮询取消状态，避免 readLine() 阻塞导致取消无法即时响应
+        final Process fp = process;
+        final StringBuilder sb = xmlOutput;
+        Thread readerThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(fp.getInputStream(), StandardCharsets.UTF_8))) {
+                char[] buf = new char[8192];
+                int n;
+                while ((n = reader.read(buf)) != -1) {
+                    synchronized (sb) {
+                        sb.append(buf, 0, n);
+                    }
                 }
+            } catch (IOException ignored) {
+                // 进程被 destroyForcibly 时流关闭，忽略
+            }
+        }, "svn-log-reader");
+        readerThread.setDaemon(true);
+        readerThread.start();
+
+        // 轮询：每 100ms 检查一次取消状态与进程存活；最长等待 120 秒
+        final long deadline = System.currentTimeMillis() + 120_000L;
+        boolean finished = false;
+        while (true) {
+            if (indicator != null && indicator.isCanceled()) {
+                process.destroyForcibly();
+                readerThread.interrupt();
+                return records;
+            }
+            if (process.waitFor(100, TimeUnit.MILLISECONDS)) {
+                finished = true;
+                break;
+            }
+            if (System.currentTimeMillis() > deadline) {
+                break;
             }
         }
-
-        boolean finished = process.waitFor(120, TimeUnit.SECONDS);
         if (!finished) {
             process.destroyForcibly();
             throw new RuntimeException("SVN log 命令执行超时（120秒）");
         }
+        // 等待读取线程收尾（进程已结束，剩余缓冲很快读完）
+        readerThread.join(2000);
 
         if (process.exitValue() != 0) {
             String errorMsg = xmlOutput.toString();
@@ -992,6 +1452,108 @@ public class SvnCommitLogAnalysisToolWindowUI {
     //  代码量统计（svn diff 解析）
     // ================================================================
 
+    /**
+     * 获取工作目录在仓库中的相对路径前缀（如 {@code /branches/HaichengMes/webproj}）。
+     * <p>
+     * svn log -v 返回的是仓库绝对路径（如 {@code /branches/HaichengMes/webproj/xxx/Foo.java}），
+     * 而 svn diff 的目标需要工作副本相对路径（如 {@code xxx/Foo.java}）。本方法通过
+     * {@code svn info --xml} 读取工作副本的 relative-url（或 url - root）得到该前缀，供路径转换使用。
+     * 结果按工作目录缓存；无法确定时返回空串（调用方回退到"仅去掉前导 /"的旧行为）。
+     * </p>
+     */
+    private String getWcRepoPrefix(String workDir) {
+        if (workDir == null) return "";
+        String cached = wcRepoPrefixCache.get(workDir);
+        if (cached != null) return cached;
+
+        String prefix = "";
+        try {
+            ProcessBuilder pb = new ProcessBuilder("svn", "info", "--xml");
+            pb.directory(new java.io.File(workDir));
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line).append('\n');
+            }
+            p.waitFor(15, TimeUnit.SECONDS);
+            String xml = sb.toString();
+            // 优先使用 relative-url（svn 1.8+），形如 ^/branches/HaichengMes/webproj
+            String rel = extractXmlValue(xml, "<relative-url>", "</relative-url>");
+            if (rel != null && rel.startsWith("^")) {
+                prefix = rel.substring(1);
+            } else {
+                // 兜底：url - root
+                String url = extractXmlValue(xml, "<url>", "</url>");
+                String root = extractXmlValue(xml, "<root>", "</root>");
+                if (url != null && root != null && url.startsWith(root)) {
+                    prefix = url.substring(root.length());
+                }
+            }
+            if (prefix.endsWith("/")) prefix = prefix.substring(0, prefix.length() - 1);
+        } catch (Exception ignored) {
+            // svn info 失败：返回空前缀，调用方回退旧行为
+        }
+        wcRepoPrefixCache.put(workDir, prefix);
+        return prefix;
+    }
+
+    /**
+     * 将 svn log 的仓库绝对路径转换为在指定工作副本下可用的相对路径。
+     * <p>
+     * 例：workDir 对应仓库 {@code /branches/HaichengMes/webproj}，
+     * repoPath = {@code /branches/HaichengMes/webproj/xxx/Foo.java} → 返回 {@code xxx/Foo.java}。
+     * 若前缀无法确定或不匹配，回退到"仅去掉前导 /"的旧行为。
+     * </p>
+     */
+    private String toWcRelativePath(String workDir, String repoPath) {
+        if (repoPath == null) return "";
+        String prefix = getWcRepoPrefix(workDir);
+        if (!prefix.isEmpty()) {
+            if (repoPath.startsWith(prefix + "/")) {
+                return repoPath.substring(prefix.length() + 1);
+            }
+            if (repoPath.equals(prefix)) {
+                return "";
+            }
+        }
+        return repoPath.startsWith("/") ? repoPath.substring(1) : repoPath;
+    }
+
+    /**
+     * 解析设置中“排除作者”列表为小写作者名集合（逗号/分号/空格/换行分隔，忽略大小写）。
+     * 用于统计时忽略指定作者的提交。
+     */
+    private Set<String> parseExcludeAuthors() {
+        Set<String> set = new LinkedHashSet<>();
+        String raw = AppSettingsState.getInstance().svnExcludeAuthors;
+        if (raw == null || raw.trim().isEmpty()) return set;
+        for (String part : raw.split("[,;\\s]+")) {
+            String a = part.trim();
+            if (!a.isEmpty()) set.add(a.toLowerCase());
+        }
+        return set;
+    }
+
+    /**
+     * 将统计表格单元格的值解析为数值，用于按数值大小排序。
+     * 支持整数、浮点、百分比（去除结尾 %），以及 "-"、空值（视为最小值）。
+     */
+    private static double parseNumericCell(Object value) {
+        if (value == null) return Double.NEGATIVE_INFINITY;
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        String s = value.toString().trim();
+        if (s.isEmpty() || "-".equals(s)) return Double.NEGATIVE_INFINITY;
+        if (s.endsWith("%")) s = s.substring(0, s.length() - 1).trim();
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException e) {
+            return Double.NEGATIVE_INFINITY;
+        }
+    }
+
     /** 判断文件路径是否匹配代码量统计范围 */
     private static boolean matchesCodeVolumePattern(String path) {
         // 排除 components 目录
@@ -1009,79 +1571,232 @@ public class SvnCommitLogAnalysisToolWindowUI {
      * 只统计新增行（+开头且非 +++），不统计删除行（-开头），符合业界惯例。
      * 跳过空新增行（仅有 + 号无实质内容）。
      * </p>
-     * @return 新增代码行数，失败返回 -1（需与 0 区分，0=无匹配文件的提交）
+     * 优化（A/B/C/D/E）：
+     * - B 流式解析：reader 线程边读边统计，避免整段 diff 缓冲进内存导致大提交 OOM。
+     * - C 重试：超时/命令失败自动重试，缓解网络抖动导致的"全部失败"。
+     * - D 定向 diff：仅对 matchingPaths 中匹配 .java / *Mapper.xml 的文件做 svn diff，
+     *     大幅减小 diff 体积与服务器负担；若定向 diff 未命中匹配文件（目标路径与 WC 不匹配）
+     *     或失败，则降级回全量 diff。
+     * - D2 分批累加：当匹配文件数超过 DIFF_BATCH_SIZE（默认 10）时，拆分为多批分别 svn diff，
+     *     各批新增行累加得到总代码量；单批失败仅重试该批，避免单条命令文件过多而超时。
+     * - E 超时配合重试（MAX_ATTEMPTS 次）；超时阈值由调用方传入（默认 3s），并按批内文件数自适应放大
+     *     （每个文件 +1s，上限 60s 或“配置阈值×10”），避免大提交反复超时；失败项可由"重试失败项"按钮批量重跑。
+     * - A 由调用方（doPerformAnalysis Step 3 / retryFailedCommits）通过线程池并行调度。
+     *
+     * @param matchingPaths 该提交中匹配代码量统计范围的仓库相对路径（如 /trunk/src/Foo.java），
+     *                      可为空（调用方已预筛，通常为非空）
+     * @return 新增代码行数，失败/取消返回 -1（需与 0 区分，0=无匹配文件的提交/无新增行）
      */
-    private int computeCommitCodeVolume(String workDir, String revision, ProgressIndicator indicator) throws Exception {
-        // svn diff -c {revision}
-        // 注意：不传 --ignore-properties，因为某些旧版 SVN 不支持会导致全部失败
-        ProcessBuilder pb = new ProcessBuilder("svn", "diff", "-c", revision);
-        pb.directory(new java.io.File(workDir));
-        pb.redirectErrorStream(true);
+    private CodeVolumeResult computeCommitCodeVolume(String workDir, String revision,
+                                                      List<String> matchingPaths, long timeoutSeconds,
+                                                      ProgressIndicator indicator) {
+        // D: 定向 diff —— 仅对匹配文件做 svn diff，减小体积与服务器负担
+        // E: 超时配合重试，失败项可由"重试失败项"按钮批量重跑（超时阈值由调用方传入，默认 3s）
+        final int MAX_ATTEMPTS = 3;            // 首次 + 重试两次
+        final int DIFF_BATCH_SIZE = 10;        // 单次 svn diff 最多携带的文件数，超过则分批累加
+        CodeVolumeResult result = new CodeVolumeResult();
 
-        Process process = pb.start();
+        // 构建定向 diff 目标：将 svn log 的仓库绝对路径转为工作副本相对路径
+        // （如 /branches/HaichengMes/webproj/xxx/Foo.java → xxx/Foo.java），
+        // 否则会因 WC 下不存在 branches/... 目录而报 E155010 node not found。
+        List<String> targets = new ArrayList<>();
+        if (matchingPaths != null) {
+            for (String mp : matchingPaths) {
+                String t = toWcRelativePath(workDir, mp);
+                if (!t.isEmpty()) targets.add(t);
+            }
+        }
 
-        // ★ 关键修复：必须在 waitFor 之前启动独立线程消费输出流，
-        //    否则大 diff 的输出缓冲区会填满导致进程死锁 → 超时 → 返回 0
-        StringBuilder output = new StringBuilder();
-        AtomicBoolean readDone = new AtomicBoolean(false);
+        List<String> fullCmd = Arrays.asList("svn", "diff", "-c", revision);
+
+        if (targets.isEmpty()) {
+            // 无匹配文件（理论上不会发生，因调用方已预筛）→ 全量 diff
+            DiffResult f = runDiff(fullCmd, workDir, timeoutSeconds, indicator);
+            if (f.canceled) { result.volume = -1; result.reason = "任务已取消"; return result; }
+            if (f.exitOk) { result.volume = f.addedLines; return result; }
+            result.volume = -1; result.reason = buildDiffFailReason(f, timeoutSeconds, MAX_ATTEMPTS);
+            return result;
+        }
+
+        // 文件较多时拆分为多批，每批单独 svn diff 后累加新增行。
+        // 这样单条命令携带的文件数可控，配合每批自适应超时，避免大提交在固定阈值下反复超时；
+        // 单批失败仅重试该批，不影响其他批的累加结果。
+        int totalAdded = 0;
+        boolean anyMatching = false;
+        boolean anyBatchFailed = false;
+        String batchFailReason = "";
+        for (int start = 0; start < targets.size(); start += DIFF_BATCH_SIZE) {
+            if (indicator != null && indicator.isCanceled()) {
+                result.volume = -1; result.reason = "任务已取消"; return result;
+            }
+            List<String> batch = targets.subList(start, Math.min(start + DIFF_BATCH_SIZE, targets.size()));
+            List<String> batchCmd = new ArrayList<>();
+            batchCmd.add("svn");
+            batchCmd.add("diff");
+            batchCmd.add("-c");
+            batchCmd.add(revision);
+            batchCmd.addAll(batch);
+            // 单批超时按批内文件数自适应放大（每文件 +1s，上限 60s 或“配置阈值×10”）
+            long batchTimeout = Math.min(timeoutSeconds + batch.size(), Math.max(60L, timeoutSeconds * 10));
+
+            DiffResult br = null;
+            for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                br = runDiff(batchCmd, workDir, batchTimeout, indicator);
+                if (br.canceled) { result.volume = -1; result.reason = "任务已取消"; return result; }
+                if (br.exitOk) break;
+            }
+            if (br == null || !br.exitOk) {
+                // 该批失败：记录原因，整体判失败交由“重试失败项”重跑（避免部分累加导致代码量低估）
+                anyBatchFailed = true;
+                batchFailReason = buildDiffFailReason(br, batchTimeout, MAX_ATTEMPTS);
+                break;
+            }
+            totalAdded += br.addedLines;
+            if (br.sawMatchingFile) anyMatching = true;
+        }
+
+        if (anyBatchFailed) {
+            result.volume = -1;
+            result.reason = batchFailReason;
+            return result;
+        }
+        if (anyMatching) {
+            result.volume = totalAdded; // 各批新增行累加
+            return result;
+        }
+
+        // 所有批均未命中匹配文件（目标路径可能与 WC 不匹配）→ 降级全量 diff 兜底（保持旧行为）
+        long fallbackTimeout = Math.min(timeoutSeconds + targets.size(), Math.max(60L, timeoutSeconds * 10));
+        DiffResult f = runDiff(fullCmd, workDir, fallbackTimeout, indicator);
+        if (f.canceled) { result.volume = -1; result.reason = "任务已取消"; return result; }
+        if (f.exitOk) { result.volume = f.addedLines; return result; }
+        result.volume = -1; result.reason = buildDiffFailReason(f, fallbackTimeout, MAX_ATTEMPTS);
+        return result;
+    }
+
+    /** 根据单次 diff 结果构建可读的失败原因 */
+    private static String buildDiffFailReason(DiffResult r, long timeoutSeconds, int maxAttempts) {
+        if (r.startFailed) return "无法启动 svn 进程（请确认 svn 已安装并在系统 PATH 中）";
+        if (r.timedOut) return "svn diff 超时（单条 " + timeoutSeconds + "s，已重试 " + (maxAttempts - 1) + " 次）";
+        return "svn diff 命令失败（exit code=" + r.exitValue + "）";
+    }
+
+    /** svn diff 单次执行的结果载体 */
+    private static class DiffResult {
+        int addedLines = 0;          // 匹配文件的新增行数
+        boolean sawMatchingFile = false; // 是否解析到至少一个匹配文件的 Index 段
+        boolean exitOk = false;      // 命令是否正常退出（exit code == 0）
+        boolean canceled = false;    // 是否被取消
+        boolean timedOut = false;    // 是否因超时未退出
+        boolean startFailed = false; // 进程是否启动失败
+        int exitValue = -1;          // 实际退出码（超时/启动失败时为 -1）
+    }
+
+    /** 单次提交代码量统计结果（含失败原因，供"查看失败项"展示） */
+    private static class CodeVolumeResult {
+        int volume = 0;      // 新增代码行数；失败/取消为 -1
+        String reason = "";  // 失败原因（成功时为空）
+    }
+
+    /**
+     * 执行一次 svn diff 命令并流式统计匹配文件的新增行数
+     *
+     * @return 命令结果（见 {@link DiffResult}）；超时/取消时 exitOk=false
+     */
+    private DiffResult runDiff(List<String> cmd, String workDir, long timeoutSeconds,
+                               ProgressIndicator indicator) {
+        DiffResult res = new DiffResult();
+
+        final Process process;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.directory(new java.io.File(workDir));
+            pb.redirectErrorStream(true);
+            process = pb.start();
+        } catch (Exception e) {
+            res.canceled = (indicator != null && indicator.isCanceled());
+            res.startFailed = true;
+            return res; // 进程启动失败
+        }
+
+        // 流式解析：reader 线程边读边统计匹配文件的新增行，避免整段缓冲导致 OOM
+        final AtomicInteger addedLines = new AtomicInteger(0);
+        final AtomicBoolean sawMatchingFile = new AtomicBoolean(false);
+        final AtomicBoolean canceled = new AtomicBoolean(false);
 
         Thread readerThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
+                boolean inMatchingFile = false;
                 while ((line = reader.readLine()) != null) {
-                    output.append(line).append('\n');
+                    if (indicator != null && indicator.isCanceled()) { canceled.set(true); break; }
+                    if (line.startsWith("Index: ")) {
+                        String filePath = line.substring(7).trim();
+                        inMatchingFile = matchesCodeVolumePattern(filePath);
+                        if (inMatchingFile) sawMatchingFile.set(true);
+                    } else if (inMatchingFile) {
+                        // 跳过 diff 元信息行
+                        if (line.startsWith("===") || line.startsWith("---")
+                                || line.startsWith("+++") || line.startsWith("@@")) {
+                            continue;
+                        }
+                        // 跳过属性变更头部
+                        if (line.startsWith("Property changes on:") || line.startsWith("Modified:")
+                                || line.startsWith("Added:") || line.startsWith("Deleted:")
+                                || line.startsWith("___")) {
+                            continue;
+                        }
+                        // 只统计新增行（+开头），跳过纯 + 号空行
+                        if (line.startsWith("+") && line.length() > 1) {
+                            addedLines.incrementAndGet();
+                        }
+                    }
                 }
             } catch (Exception ignored) {
                 // 进程被 destroyForcibly 时流中断属正常情况
             }
-            readDone.set(true);
-        }, "svn-diff-reader-" + revision);
+        }, "svn-diff-reader-" + String.join("_", cmd).hashCode());
         readerThread.setDaemon(true);
         readerThread.start();
 
-        // 等待进程结束（不再死锁，因为输出已被消费）
-        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        // 轮询等待：每 100ms 检查一次取消/超时，取消时立即 destroy 进程，避免 waitFor 阻塞整个超时
+        boolean finished = false;
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        try {
+            while (true) {
+                if (indicator != null && indicator.isCanceled()) {
+                    process.destroyForcibly();
+                    res.canceled = true;
+                    try { readerThread.join(3000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    return res;
+                }
+                long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                if (remainingMs <= 0) break;
+                finished = process.waitFor(Math.min(remainingMs, 100), TimeUnit.MILLISECONDS);
+                if (finished) break;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
+            res.canceled = true;
+            return res;
+        }
         if (!finished) {
             process.destroyForcibly();
-            return -1; // 超时
+            res.timedOut = true;
+            try { readerThread.join(3000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            return res; // 超时：exitOk 保持 false
         }
 
-        // 等待读线程结束
-        try { readerThread.join(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        try { readerThread.join(3000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
 
-        if (process.exitValue() != 0) return -1; // SVN 命令执行失败
-
-        // 解析 diff 输出
-        int addedLines = 0;
-        boolean inMatchingFile = false;
-
-        for (String line : output.toString().split("\n")) {
-            if (indicator.isCanceled()) return -1;
-
-            // Index: 行标记文件开始
-            if (line.startsWith("Index: ")) {
-                String filePath = line.substring(7).trim();
-                inMatchingFile = matchesCodeVolumePattern(filePath);
-            } else if (inMatchingFile) {
-                // 跳过 diff 元信息行
-                if (line.startsWith("===") || line.startsWith("---")
-                        || line.startsWith("+++") || line.startsWith("@@")) {
-                    continue;
-                }
-                // 跳过属性变更头部（Property changes on: / Modified: 等）
-                if (line.startsWith("Property changes on:") || line.startsWith("Modified:")
-                        || line.startsWith("Added:") || line.startsWith("Deleted:")
-                        || line.startsWith("___")) {
-                    continue;
-                }
-                // 只统计新增行（+开头），跳过纯 + 号空行
-                if (line.startsWith("+") && line.length() > 1) {
-                    addedLines++;
-                }
-            }
-        }
-        return addedLines;
+        if (canceled.get()) { res.canceled = true; return res; }
+        res.exitValue = process.exitValue();
+        res.exitOk = (res.exitValue == 0);
+        res.addedLines = addedLines.get();
+        res.sawMatchingFile = sawMatchingFile.get();
+        return res;
     }
 
     // ================================================================
@@ -1091,19 +1806,24 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private Map<String, AuthorStats> computeAuthorStats(List<SvnCommitRecord> records) {
         Map<String, AuthorStats> map = new LinkedHashMap<>();
         int totalCommits = records.size();
+        int totalCodeVolume = 0;
         for (SvnCommitRecord r : records) {
             AuthorStats stats = map.computeIfAbsent(r.author, k -> new AuthorStats(k));
             stats.commitCount++;
             stats.totalChangedFiles += r.changedFileCount;
-            stats.totalCodeVolume += r.codeVolume;
+            stats.totalCodeVolume += Math.max(0, r.codeVolume); // 失败项（-1）不计入总量
+            totalCodeVolume += Math.max(0, r.codeVolume); // 失败项（-1）不计入总量
             if (r.projectName != null && !r.projectName.isEmpty()) {
                 stats.projectNames.add(r.projectName);
             }
         }
-        // 计算占比
+        // 计算占比（提交次数占比 + 代码量占比）
         for (AuthorStats s : map.values()) {
             s.percentage = totalCommits > 0
                     ? String.format("%.1f%%", 100.0 * s.commitCount / totalCommits)
+                    : "0%";
+            s.volumePercentage = totalCodeVolume > 0
+                    ? String.format("%.1f%%", 100.0 * s.totalCodeVolume / totalCodeVolume)
                     : "0%";
         }
         // 按提交次数降序
@@ -1140,7 +1860,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
             for (SvnCommitRecord r : records) {
                 if (r.author.equals(author)) {
                     String pn = r.projectName != null && !r.projectName.isEmpty() ? r.projectName : "未知";
-                    int value = useVolume ? r.codeVolume : 1;
+                    int value = useVolume ? Math.max(0, r.codeVolume) : 1; // 失败项（-1）不计入图表
                     projectCounts.merge(pn, value, Integer::sum);
                 }
             }
@@ -1157,7 +1877,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
         // 按项目分组
         for (SvnCommitRecord r : records) {
             String pn = r.projectName != null && !r.projectName.isEmpty() ? r.projectName : "未知";
-            int value = useVolume ? r.codeVolume : 1;
+            int value = useVolume ? Math.max(0, r.codeVolume) : 1; // 失败项（-1）不计入图表
             result.computeIfAbsent(pn, k -> new LinkedHashMap<>())
                   .merge(r.author, value, Integer::sum);
         }
@@ -1196,7 +1916,7 @@ public class SvnCommitLogAnalysisToolWindowUI {
             statTableModel.addRow(new Object[]{
                     s.author, projects, s.commitCount, s.totalChangedFiles,
                     s.totalCodeVolume > 0 ? String.valueOf(s.totalCodeVolume) : "-",
-                    s.percentage
+                    s.percentage, s.volumePercentage
             });
         }
     }
@@ -1248,14 +1968,14 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
         if (includeStatsCheck.isSelected()) {
             sb.append("## 人员统计\n");
-            sb.append("| 作者 | 涉及项目 | 提交次数 | 变更文件总数 | 代码量 | 占比 |\n");
-            sb.append("|------|---------|---------|-------------|--------|------|\n");
+            sb.append("| 作者 | 涉及项目 | 提交次数 | 变更文件总数 | 代码量 | 提交次数占比 | 代码量占比 |\n");
+            sb.append("|------|---------|---------|-------------|--------|------------|----------|\n");
             for (AuthorStats s : displayedStats.values()) {
                 String projects = s.projectNames != null && !s.projectNames.isEmpty()
                         ? String.join(", ", s.projectNames) : "-";
                 String volStr = s.totalCodeVolume > 0 ? String.valueOf(s.totalCodeVolume) : "-";
-                sb.append(String.format("| %s | %s | %d | %d | %s | %s |\n",
-                        s.author, projects, s.commitCount, s.totalChangedFiles, volStr, s.percentage));
+                sb.append(String.format("| %s | %s | %d | %d | %s | %s | %s |\n",
+                        s.author, projects, s.commitCount, s.totalChangedFiles, volStr, s.percentage, s.volumePercentage));
             }
             sb.append("\n");
         }
@@ -1525,7 +2245,8 @@ public class SvnCommitLogAnalysisToolWindowUI {
         public int commitCount = 0;
         public int totalChangedFiles = 0;
         public int totalCodeVolume = 0;   // 代码变更行数合计
-        public String percentage = "0%";
+        public String percentage = "0%";          // 提交次数占比
+        public String volumePercentage = "0%";    // 代码量占比
         public final Set<String> projectNames = new LinkedHashSet<>();  // 涉及的多个项目
 
         public AuthorStats(String author) {
@@ -1596,6 +2317,19 @@ public class SvnCommitLogAnalysisToolWindowUI {
             this.projectDataByCommits = projectByCommits;
             this.projectDataByVolume = projectByVolume;
             applyCurrentMetric();
+        }
+
+        /**
+         * 是否允许切换"按代码量"指标。
+         * 当未统计代码量时禁用该选项并强制回到"按提交次数"，避免图表全 0 的误导。
+         */
+        public void setVolumeEnabled(boolean enabled) {
+            metricCombo.setEnabled(enabled);
+            if (!enabled) {
+                metricCombo.setSelectedIndex(0);
+                useVolume = false;
+                applyCurrentMetric();
+            }
         }
 
         /** 兼容旧 API：设置堆叠柱状图数据 */
