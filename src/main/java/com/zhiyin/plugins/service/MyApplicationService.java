@@ -1,5 +1,6 @@
 package com.zhiyin.plugins.service;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
@@ -27,7 +28,9 @@ public final class MyApplicationService {
         Boolean isOldMesProject = projectTypeMap.get(projectFilePath);
         if (isOldMesProject == null) {
 //            isOldMesProject = isOldMesProject(project, module);
-            isOldMesProject = !isSpringCloudMesProject(project);
+            // isSpringCloudMesProject 内部 PsiManager.findFile 读 pom.xml，要求 read-action；
+            // 本方法会被后台线程（I18nScanner 扫描）调用，须自带 ReadAction，不能依赖调用方
+            isOldMesProject = ReadAction.compute(() -> !isSpringCloudMesProject(project));
             projectTypeMap.put(projectFilePath, isOldMesProject);
         }
         return isOldMesProject;

@@ -87,6 +87,17 @@ public class Constants {
     public static final String MYBATIS_DTD_CLASSPATH = "classpath://mybatis-3-mapper.dtd";
 //    public static final String[] MYBATIS_POSSIBLE_NAMESPACES = new String[]{MYBATIS_DTD_CLASSPATH, MYBATIS_DTD_DEFAULT};
 
+    /**
+     * Inlay 渲染保护：文件文本长度超过此阈值（字节，约 1MB）时不再创建 i18n Inlay，
+     * 避免超大文件（如 MES 项目的巨型 Layout XML / FTL）堆积海量 RangeHighlighter 导致 IDEA 内存溢出。
+     */
+    public static final int I18N_INLAY_MAX_TEXT_LENGTH = 1_000_000;
+
+    /**
+     * Inlay 渲染保护：可见区域上下额外缓冲行数，保证滚动时 Inlay 提前渲染避免闪烁。
+     */
+    public static final int I18N_INLAY_VISIBLE_BUFFER_LINES = 50;
+
     public static final String NAVIGATE_TO_MAPPER = "跳转到 Mapper XML";
     public static final String NAVIGATE_TO_MOC = "跳转到 Moc XML";
     public static final String NAVIGATE_TO_DAO_INTERFACE = "跳转到 Dao 接口";

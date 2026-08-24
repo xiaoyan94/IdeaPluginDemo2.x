@@ -1,8 +1,10 @@
 package com.zhiyin.plugins.i18n;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
-import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -42,6 +44,22 @@ public final class I18nCacheManager {
 
     public Map<String, ModuleI18nCache> getAllModuleCaches() {
         return i18nCacheByModule;
+    }
+
+    /**
+     * 批量加载索引扫描到的 i18n 资源文件。
+     * 用于传统 Java Web 项目等 i18n 文件不在 resources/i18n 目录下、无法靠目录扫描覆盖的场景，
+     * 启动时一次性按索引找齐灌入缓存，替代原热路径上的索引兜底查询。
+     * 文件归属模块由 ModuleUtilCore 判定，判定不出时跳过（避免污染错误模块的缓存）。
+     */
+    public void scanI18nFiles(Project project, Collection<VirtualFile> files) {
+        for (VirtualFile file : files) {
+            if (file == null || !ReadAction.compute(() -> file.isValid())) continue;
+            // findModuleForFile 在后台线程需要 read-action（线程断言），ReadAction 嵌套无害
+            Module module = ReadAction.compute(() -> ModuleUtilCore.findModuleForFile(file, project));
+            if (module == null) continue;
+            loadSingleFile(module.getName(), file);
+        }
     }
 
     /**
@@ -267,8 +285,6 @@ public final class I18nCacheManager {
             // 清空旧值，加载新值
             targetMap.clear();
             props.forEach((k, v) -> targetMap.put((String) k, (String) v));
-
-            System.out.println("Loaded single file: " + file.getPath() + " (" + targetMap.size() + " entries)");
         } catch (Exception ex) {
             LOG.warn("Failed to load single file: " + file.getPath(), ex);
         }
@@ -289,7 +305,6 @@ public final class I18nCacheManager {
                 // 清空整个语言缓存也行，但更合理的是只清除与该文件相关的 key
                 // 因为我们没记录文件来源，只能全清
                 targetMap.remove(lang);
-                System.out.println("Removed cache for " + file.getPath());
                 LOG.info("Removed cache for " + file.getPath());
             }
         }
@@ -316,23 +331,26 @@ public final class I18nCacheManager {
     public static String findModuleForFile(Project project, VirtualFile file) {
         if (project == null || file == null) return null;
 
-        com.intellij.openapi.module.ModuleManager moduleManager = com.intellij.openapi.module.ModuleManager.getInstance(project);
-        com.intellij.openapi.module.Module[] modules = moduleManager.getModules();
+        // getSourceRoots 等模块模型查询要求 read-action；本方法可能从 VFS 事件回调 / 后台线程进入
+        return ReadAction.compute(() -> {
+            com.intellij.openapi.module.ModuleManager moduleManager = com.intellij.openapi.module.ModuleManager.getInstance(project);
+            com.intellij.openapi.module.Module[] modules = moduleManager.getModules();
 
-        for (com.intellij.openapi.module.Module module : modules) {
-            com.intellij.openapi.roots.ModuleRootManager rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(module);
-            VirtualFile[] roots = rootManager.getSourceRoots(false);
-            for (VirtualFile root : roots) {
-                if (!root.getPath().contains("/resources")) continue;
-                VirtualFile i18nDir = root.findFileByRelativePath("i18n");
-                if (i18nDir != null && i18nDir.isDirectory()) {
-                    if (com.intellij.openapi.vfs.VfsUtilCore.isAncestor(i18nDir, file, true)) {
-                        return module.getName();
+            for (com.intellij.openapi.module.Module module : modules) {
+                com.intellij.openapi.roots.ModuleRootManager rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(module);
+                VirtualFile[] roots = rootManager.getSourceRoots(false);
+                for (VirtualFile root : roots) {
+                    if (!root.getPath().contains("/resources")) continue;
+                    VirtualFile i18nDir = root.findFileByRelativePath("i18n");
+                    if (i18nDir != null && i18nDir.isDirectory()) {
+                        if (com.intellij.openapi.vfs.VfsUtilCore.isAncestor(i18nDir, file, true)) {
+                            return module.getName();
+                        }
                     }
                 }
             }
-        }
-        return null;
+            return null;
+        });
     }
 
 }

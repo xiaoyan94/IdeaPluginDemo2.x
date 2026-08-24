@@ -2,6 +2,7 @@ package com.zhiyin.plugins.listeners;
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.codeInsight.daemon.impl.analysis.HighlightingLevelManager;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Caret;
@@ -73,12 +74,12 @@ public class MyFileEditorManagerListener implements FileEditorManagerListener {
 
 //        MyPluginMessages.showInfo("fileOpened", file.getName(), source.getProject());
 
+        // 光标监听器绑定 editor 生命周期（editor 释放时自动移除），不再靠 fileClosed 手动移除。
+        // Editor 接口未直接实现 Disposable（EditorImpl 才实现），需 instanceof 判定
         Editor editor = source.getSelectedTextEditor();
-        if (editor != null) {
-            // 注册光标监听器
+        if (editor instanceof Disposable parentDisposable) {
             caretListener = new FoldingCaretListener(editor);
-            editor.getCaretModel().addCaretListener(caretListener);
-            System.out.println("fileOpened: addCaretListener");
+            editor.getCaretModel().addCaretListener(caretListener, parentDisposable);
         }
 
         // adjustHighlighting(source, file);
@@ -117,13 +118,8 @@ public class MyFileEditorManagerListener implements FileEditorManagerListener {
         FileEditorManagerListener.super.fileClosed(source, file);
 //        MyPluginMessages.showInfo("fileClosed", file.getName(), source.getProject());
 
-        Editor editor = source.getSelectedTextEditor();
-        if (editor != null && caretListener != null) {
-            editor.getCaretModel().removeCaretListener(caretListener);
-            caretListener = null; // 避免重复移除
-            System.out.println("fileClosed: removeCaretListener");
-        }
-
+        // caretListener 已随 editor 释放（addCaretListener(listener, editor)），无需手动移除
+        caretListener = null;
     }
 
     /**
@@ -191,14 +187,22 @@ public class MyFileEditorManagerListener implements FileEditorManagerListener {
                     .findFirst()
                     .orElse(null);
 
+            // 状态没变化（未进入新区域、离开的也不是目标区域）就不触发折叠批处理，避免每次光标移动都跑一遍
+            boolean needCollapse = lastRegion != null && lastRegion != currentRegion && lastRegion.isValid();
+            boolean needExpand = currentRegion != null && !currentRegion.isExpanded();
+            if (!needCollapse && !needExpand) {
+                lastRegion = currentRegion;
+                return;
+            }
+
             editor.getFoldingModel().runBatchFoldingOperation(() -> {
                 // 若光标从某个折叠区域离开，则折叠它
-                if (lastRegion != null && lastRegion != currentRegion && isTargetFoldRegion(lastRegion)) {
+                if (needCollapse && isTargetFoldRegion(lastRegion)) {
                     lastRegion.setExpanded(false);
                 }
 
                 // 若光标进入某个区域，则展开它
-                if (currentRegion != null && !currentRegion.isExpanded()) {
+                if (needExpand) {
                     currentRegion.setExpanded(true);
                 }
 
