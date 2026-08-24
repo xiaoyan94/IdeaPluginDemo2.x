@@ -104,6 +104,32 @@ final class MyJavaMethodReference extends PsiReferenceBase<PsiLiteralExpression>
     }
 
     /**
+     * 反向匹配（Find Usages / 声明处 Ctrl+B / Rename 用法收集）的统一判定入口。
+     * 基类 PsiReferenceBase 默认只认 resolve() 的单一结果——multiResolve 多目标时
+     * resolve() 恒为 null，本引用对反向查找隐身。此处改为遍历 multiResolve 与目标比对：
+     * 字符串方法名既算 Dao 方法的用法（反向跳转/Rename 同步），
+     * 也算 Mapper XML 语句标签的用法，与正向跳转的目标集合保持一致。
+     */
+    @Override
+    public boolean isReferenceTo(@NotNull PsiElement element) {
+        for (ResolveResult result : multiResolve(false)) {
+            PsiElement resolved = result.getElement();
+            if (resolved == null) continue;
+            // StatementNavigationTarget 包装的 XML 目标，与其委托的 XmlAttributeValue 都认
+            if (resolved instanceof StatementNavigationTarget) {
+                PsiElement delegate = resolved.getNavigationElement();
+                if (delegate != null && getElement().getManager().areElementsEquivalent(delegate, element)) {
+                    return true;
+                }
+            }
+            if (getElement().getManager().areElementsEquivalent(resolved, element)) {
+                return true;
+            }
+        }
+        return super.isReferenceTo(element);
+    }
+
+    /**
      * 代码提示:根据引用提供自动补全(ctrl + 空格)，列表统一使用插件专属图标
      */
     @Override

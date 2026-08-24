@@ -7,8 +7,10 @@ import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.psi.*;
+import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlAttributeValue;
 import com.intellij.psi.xml.XmlFile;
@@ -78,6 +80,12 @@ public class MyXMLReferenceContributor extends PsiReferenceContributor {
         private final String methodName;
 
         /**
+         * 懒缓存解析结果。multiResolve 在 hover / 高亮 / 查找用法时会被高频调用，
+         * 其中含全项目用法搜索（ReferencesSearch），必须缓存；元素失效时自动重算。
+         */
+        private volatile ResolveResult[] cachedResults;
+
+        /**
          * Reference range is obtained from {@link ElementManipulator#getRangeInElement(PsiElement)}.
          *
          * @param element Underlying element.
@@ -98,24 +106,80 @@ public class MyXMLReferenceContributor extends PsiReferenceContributor {
          */
         @Override
         public ResolveResult @NotNull [] multiResolve(boolean incompleteCode) {
-            PsiMethod[] psiMethods = psiClass.findMethodsByName(methodName, false);
+            ResolveResult[] results = cachedResults;
+            if (results == null || !areResultsValid(results)) {
+                results = computeResolveResults();
+                cachedResults = results;
+            }
+            return results;
+        }
+
+        private ResolveResult @NotNull [] computeResolveResults() {
             List<ResolveResult> results = new ArrayList<>();
+            // 1) Dao 接口方法（原目标不变）
+            PsiMethod[] psiMethods = psiClass.findMethodsByName(methodName, false);
             for (PsiMethod psiMethod : psiMethods) {
                 results.add(new PsiElementResolveResult(psiMethod));
+            }
+            // 2) 反向补充目标：queryDaoDataT(..., "methodName", ...) 调用字符串。
+            //    复用引用体系——ReferencesSearch 查 Dao 方法的用法，MyJavaMethodReference.isReferenceTo
+            //    已把 queryDaoDataT 字符串认作用法，此处取其源元素（PsiLiteralExpression）作为跳转目标，
+            //    使 Mapper XML id 上 Ctrl+B 可同时选 Dao 方法与调用字符串。
+            //    只认 MyJavaMethodReference：真实 Java 调用 / 其他 XML id / Moc 引用不混入。
+            if (!DumbService.isDumb(getElement().getProject())) {
+                List<PsiElement> literals = new ArrayList<>();
+                for (PsiMethod psiMethod : psiMethods) {
+                    for (PsiReference reference : ReferencesSearch.search(psiMethod).findAll()) {
+                        if (reference instanceof MyJavaMethodReference
+                                && reference.getElement() != null
+                                && !literals.contains(reference.getElement())) {
+                            literals.add(reference.getElement());
+                        }
+                    }
+                }
+                for (PsiElement literal : literals) {
+                    // 包装为带展示信息的目标：选择框显示 queryDaoDataT("getXxx") + 文件名:行号，
+                    // 裸字面量只会显示带引号字符串、无任何上下文（同 StatementNavigationTarget 模式）
+                    results.add(new PsiElementResolveResult(new QueryDaoCallNavigationTarget(literal, methodName)));
+                }
             }
             return results.toArray(new ResolveResult[0]);
         }
 
+        private static boolean areResultsValid(ResolveResult[] results) {
+            for (ResolveResult result : results) {
+                PsiElement element = result.getElement();
+                if (element == null || !element.isValid()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         /**
-         * Returns the element which is the target of the reference.
-         *
-         * @return the target element, or {@code null} if it was not possible to resolve the reference to a valid target.
-         * @see PsiPolyVariantReference#multiResolve(boolean)
+         * 反向匹配只认 Dao 方法。不得走 super：基类默认实现调 resolve() → multiResolve →
+         * ReferencesSearch → 搜索器回调候选引用的 isReferenceTo，会形成自递归；
+         * 此处只做轻量比对，与 multiResolve 的重搜索解耦。
+         */
+        @Override
+        public boolean isReferenceTo(@NotNull PsiElement element) {
+            for (PsiMethod psiMethod : psiClass.findMethodsByName(methodName, false)) {
+                if (getElement().getManager().areElementsEquivalent(psiMethod, element)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * 单一目标时直接跳转；多目标（Dao 方法 + 多处 queryDaoDataT 字符串）返回 null，
+         * 让 GotoDeclarationAction 走 multiResolve 弹出选择列表（与 MyJavaMethodReference 同语义）。
+         * 原实现 length >= 1 恒取首个目标，导致 Ctrl+B 直接跳 Dao、不弹选择框。
          */
         @Override
         public @Nullable PsiElement resolve() {
             ResolveResult[] resolveResults = multiResolve(false);
-            return resolveResults.length >= 1 ? resolveResults[0].getElement() : null;
+            return resolveResults.length == 1 ? resolveResults[0].getElement() : null;
         }
 
         /**
