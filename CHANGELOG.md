@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+- 增强：queryDaoDataT 字符串方法名与 Dao 方法 / Mapper XML 标签的双向导航
+  - `MyJavaMethodReference` 保持原双目标解析（Mapper XML 语句标签 + Dao 接口方法，Ctrl+B 仍弹选择框）不变，新增 `isReferenceTo` 覆写：遍历 `multiResolve` 结果与目标比对（对 `StatementNavigationTarget` 包装目标同时认其导航委托元素）。
+  - 效果：Find Usages / 在 Dao 方法声明处 Ctrl+B 可反查到 `queryDaoDataT(..., "getXxx", ...)` 字符串用法；对 Dao 方法 Rename 时字符串同步改名。此前双目标下 `resolve()` 恒为 null，基类 `PsiReferenceBase.isReferenceTo` 默认实现导致反向链路整体失效。
+  - Mapper XML 侧：`MyXMLReference`（id 值 → Dao 方法引用）的 `multiResolve` 增加反向目标——通过 `ReferencesSearch` 查 Dao 方法用法，取 `MyJavaMethodReference` 引用的源元素（queryDaoDataT 字符串）入目标集合，使 **XML id 上 Ctrl+B 弹出「Dao 方法 + queryDaoDataT 调用字符串」选择框**。字符串目标用 `QueryDaoCallNavigationTarget` 包装（新增，同 `StatementNavigationTarget` 模式）：展示 `queryDaoDataT("getXxx")` + 文件名:行号 + 插件图标，裸字面量在选择框中只有引号字符串无上下文。配套：`resolve()` 改为单目标直跳/多目标返回 null 的标准语义（原实现恒取首个目标，Ctrl+B 永远直接跳 Dao 不弹框）；解析结果懒缓存（用法搜索开销大）；`isReferenceTo` 覆写为只认 Dao 方法的轻量比对（不走 super 的 resolve 链，避免 multiResolve→ReferencesSearch→isReferenceTo 自递归）；dumb mode 下跳过用法搜索。
+
 - 修复 inlay 全部消失：启动扫描线程断言异常阻断 HtmlFoldingProjectService 初始化
   - 根因：`I18nScanner.scanProject` 在 `Task.Backgroundable` 后台线程调用 `ProjectTypeChecker.isTraditionalJavaWebProject` → `MyApplicationService.isSpringCloudMesProject` 内 `PsiManager.findFile` 读 pom.xml **未持 read-action**，在 IntelliJ 线程断言下抛 `RuntimeExceptionWithAttachments`（idea.log 实证，帅威/海程等有 springboot+springcloud 目录的项目必现）；异常中断 `scanProject` 末尾的 `HtmlFoldingProjectService.getInstance()`——fileOpened 监听注册在其构造函数，链路一断所有新开文件不再创建 HtmlFoldingManager，inlay 全灭。
   - 修复（根上）：`checkIsOldMesProject` 内部自持 `ReadAction.compute`，不再依赖调用方线程上下文。
