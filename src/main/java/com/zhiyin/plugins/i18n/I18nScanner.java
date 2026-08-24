@@ -11,19 +11,28 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
+import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.OrderEnumerator;
 import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.search.FileTypeIndex;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiUtil;
 import com.zhiyin.plugins.component.HtmlFoldingProjectService;
 import com.zhiyin.plugins.notification.MyPluginMessages;
+import com.zhiyin.plugins.resources.Constants;
+import com.zhiyin.plugins.utils.ProjectTypeChecker;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Collection;
+import java.util.Set;
 
 public class I18nScanner {
 
@@ -59,18 +68,75 @@ public class I18nScanner {
 
         }
 
+        // 传统 Java Web 项目（老 MES）：i18n 文件不在 resources/i18n 目录下，目录扫描覆盖不到，
+        // 按索引一次性找齐灌入缓存（取代原热路径 findXxxValue 里的索引兜底）。
+        // try-catch 防御：本方法末尾的 HtmlFoldingProjectService 初始化是 inlay 创建链的守门人
+        // （fileOpened 监听在其构造函数注册），这里任何异常都会导致全项目 inlay 失效，必须兜住只记日志
+        try {
+            if (ProjectTypeChecker.isTraditionalJavaWebProject(project, null)) {
+                scanProjectResourcesByIndex(project, cacheManager);
+            }
+        } catch (Throwable t) {
+            Logger.getInstance(I18nScanner.class).warn("Traditional project index scan failed, i18n cache may be incomplete", t);
+        }
+
         ApplicationManager.getApplication().invokeLater(() -> {
             if (showNotification) {
                 MyPluginMessages.showInfo("I18n Scan", "I18n cache scanned successfully.");
             }
 
-            // testRefreshOpenedEditorInlay(project);
-            // forceReloadOpenedEditors(project);
+            // 缓存灌满后刷新已打开编辑器的折叠/Inlay，否则已打开文件显示的还是旧缓存（${key}）
+            refreshOpenedEditorsFolding(project);
+            com.zhiyin.plugins.manager.HtmlFoldingManager.refreshAllEditorsInlays(project);
 
             // 主动获取 Service，从而触发构造函数里的 Listener 注册
             HtmlFoldingProjectService.getInstance(project); // 保证在缓存加载完成后再初始化 HtmlFoldingProjectService
         });
 
+    }
+
+    /**
+     * 按索引收集全项目 i18n 资源文件（含 web_、模块名前后缀、datagrid 目录），灌入缓存。
+     * 只在启动扫描的后台线程跑一次；runReadActionInSmartMode 保证索引可用（dumb mode 时等待）。
+     */
+    private static void scanProjectResourcesByIndex(Project project, I18nCacheManager cacheManager) {
+        DumbService.getInstance(project).runReadActionInSmartMode(() -> {
+            GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
+            Collection<VirtualFile> properties = FileTypeIndex.getFiles(
+                    FileTypeManager.getInstance().getFileTypeByExtension("properties"), scope);
+
+            Set<VirtualFile> i18nFiles = properties.stream()
+                    .filter(vf -> {
+                        String name = vf.getName();
+                        // web_*.properties 在模块内任意位置（原 FilenameIndex 查找不限定 i18n 目录）
+                        if (name.startsWith("web_")) return true;
+                        // 模块资源与 datagrid 资源都在 i18n 目录下，按语言后缀识别
+                        String path = vf.getPath().replace('\\', '/');
+                        return path.contains("/i18n/") &&
+                                (path.endsWith(Constants.I18N_ZH_CN_SUFFIX) ||
+                                        path.endsWith(Constants.I18N_ZH_TW_SUFFIX) ||
+                                        path.endsWith(Constants.I18N_EN_US_SUFFIX) ||
+                                        path.endsWith(Constants.I18N_VI_VN_SUFFIX));
+                    })
+                    .collect(java.util.stream.Collectors.toSet());
+
+            cacheManager.scanI18nFiles(project, i18nFiles);
+        });
+    }
+
+    /**
+     * 缓存加载完成后触发已打开编辑器的折叠重算，让占位符读到新缓存值。
+     */
+    private static void refreshOpenedEditorsFolding(Project project) {
+        FileEditorManager fileEditorManager = FileEditorManager.getInstance(project);
+        for (VirtualFile openedFile : fileEditorManager.getOpenFiles()) {
+            for (FileEditor fileEditor : fileEditorManager.getEditors(openedFile)) {
+                if (fileEditor instanceof TextEditor textEditor) {
+                    CodeFoldingManager.getInstance(project)
+                            .scheduleAsyncFoldingUpdate(textEditor.getEditor());
+                }
+            }
+        }
     }
 
     private static void testRefreshOpenedEditorInlay(Project project) {

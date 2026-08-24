@@ -61,93 +61,36 @@ public class MyPropertiesUtil {
 
     /**
      * 在所在模块中查找 web Properties 资源文件
+     *
+     * <p>性能约定：本方法处于折叠占位符 / Inlay 等高频渲染热路径，只查 {@link I18nCacheManager}
+     * 缓存、不访问任何索引。缓存未命中返回 null（module 为 null 时由 getValue 遍历全部模块缓存）；
+     * 传统 Java Web 项目等不在 resources/i18n 目录下的资源，由 I18nScanner 启动扫描
+     * （scanProjectResourcesByIndex）一次性灌入缓存。</p>
      */
     public static String findModuleWebI18nPropertyValue(Project project, Module module, String key) {
+        if (key == null) return null;
+
         I18nCacheManager i18nCacheManager = project.getService(I18nCacheManager.class);
-        // 从缓存中获取
         String moduleName = module == null ? null : module.getName();
-        Map<String, String> valuesWeb = i18nCacheManager.getValuesByKey(moduleName, I18nCacheManager.ResourceType.WEB, key);
-        Map<String, String> valuesOther = i18nCacheManager.getValuesByKey(moduleName, I18nCacheManager.ResourceType.OTHER, key);
-        valuesWeb.putAll(valuesOther);
-        String val = valuesWeb.get(I18nCacheManager.ZH_CN);
+        String val = i18nCacheManager.getValue(moduleName, I18nCacheManager.ResourceType.WEB, I18nCacheManager.ZH_CN, key);
         if (isNotEmpty(val)) return val;
 
-        // 兜底
-        if (module == null) {
-            // 如果从jar包打开，则module默认取模块名包含basic的模块
-            Module[] modules = ModuleManager.getInstance(project).getModules();
-            for (Module m : modules) {
-                if (m.getName().toLowerCase().contains("basic")) {
-                    module = m;
-                    break;
-                }
-            }
-            if (module == null) {
-                System.out.println("findModuleWebI18nPropertyValue not found module for key: " + key);
-                return key;
-            }
-        }
-
-        System.out.println("findModuleWebI18nPropertyValue by file, key: " + key);
-
-        List<Property> properties = findModuleI18nProperties(project, module, key);
-        properties.addAll(findModuleWebI18nProperties(project, module, key));
-        if (properties.isEmpty()) return null;
-        Property property = properties.get(0);
-        if (property == null || property.getValue() == null) return null;
-        boolean native2AsciiForPropertiesFiles = isNative2AsciiForPropertiesFiles();
-        if (native2AsciiForPropertiesFiles) {
-            return property.getValue();
-        } else {
-            return StringUtil.unicodeToString(property.getValue());
-        }
+        val = i18nCacheManager.getValue(moduleName, I18nCacheManager.ResourceType.OTHER, I18nCacheManager.ZH_CN, key);
+        return isNotEmpty(val) ? val : null;
     }
 
     /**
      * 在所在模块中查找 datagird Properties 资源文件
+     *
+     * <p>性能约定同 {@link #findModuleWebI18nPropertyValue}：纯缓存查询，未命中返回 null。</p>
      */
     public static String findModuleDataGridI18nPropertyValue(Project project, Module module, String key) {
+        if (key == null) return null;
+
         I18nCacheManager i18nCacheManager = project.getService(I18nCacheManager.class);
-        // 从缓存中获取
         String moduleName = module == null ? null : module.getName();
-        Map<String, String> valuesDataGrid = i18nCacheManager.getValuesByKey(moduleName, I18nCacheManager.ResourceType.DATAGRID, key);
-        String val = valuesDataGrid.get(I18nCacheManager.ZH_CN);
-        if (isNotEmpty(val)) return val;
-
-        // 兜底
-        if (module == null) {
-            // 如果从jar包打开，则module默认取模块名包含basic的模块
-            Module[] modules = ModuleManager.getInstance(project).getModules();
-            for (Module m : modules) {
-                if (m.getName().toLowerCase().contains("basic")) {
-                    module = m;
-                    break;
-                }
-            }
-            if (module == null) {
-                System.out.println("findModuleDataGridI18nPropertyValue not found module for key: " + key);
-                return key;
-            }
-        }
-
-        if (key != null && key.toLowerCase().endsWith("id")) {
-            System.out.println("findModuleDataGridI18nPropertyValue by file, ignore *id: " + key);
-            return null;
-        }
-
-        System.out.println("findModuleDataGridI18nPropertyValue by file, key: " + key);
-
-
-        List<Property> properties = findModuleDataGridI18nProperties(project, module, key);
-        if (properties.isEmpty()) return null;
-        Property property = properties.get(0);
-        if (property == null || property.getValue() == null) return null;
-        boolean native2AsciiForPropertiesFiles = isNative2AsciiForPropertiesFiles();
-        if (native2AsciiForPropertiesFiles) {
-            return property.getValue();
-        } else {
-            return StringUtil.unicodeToString(property.getValue());
-        }
+        String val = i18nCacheManager.getValue(moduleName, I18nCacheManager.ResourceType.DATAGRID, I18nCacheManager.ZH_CN, key);
+        return isNotEmpty(val) ? val : null;
     }
 
     /**

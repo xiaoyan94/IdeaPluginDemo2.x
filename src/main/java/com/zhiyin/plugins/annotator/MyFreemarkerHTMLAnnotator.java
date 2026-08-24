@@ -41,18 +41,9 @@ public class MyFreemarkerHTMLAnnotator implements Annotator {
 //        }
 
         if (Arrays.stream(element.getChildren()).anyMatch(child -> child instanceof OuterLanguageElement && child.getText().contains("<@message"))){
-            System.out.println(element.getText());
+            // 调试打印已移除：annotator 对每个元素都会走到这里，println 同步 I/O 会拖慢 daemon 扫描
         } else {
             return;
-        }
-
-        if (element.getText().contains("<@message key")) {
-            if (element.getTextLength() < 200){
-                System.out.println("MyFreemarkerHTMLAnnotator.annotate TEXT: " + element.getText());
-            }
-            System.out.println("MyFreemarkerHTMLAnnotator.annotate: " + element.toString());
-            System.out.println(Arrays.toString(element.getChildren()));
-            System.out.println("-------");
         }
 
         String keyValue = MyPsiUtil.retrieveI18nKeyFromFreemarkerDirective(element);

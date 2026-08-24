@@ -252,10 +252,7 @@ public class MyPsiUtil {
 
             if (matcher.find()) {
                 String keyValue = matcher.group(2);
-//                System.out.println("Key value: " + keyValue);
                 return keyValue;
-            } else {
-                System.out.println("No key value found");
             }
         }
 

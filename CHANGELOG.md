@@ -4,6 +4,36 @@
 
 ## [Unreleased]
 
+- 修复 inlay 全部消失：启动扫描线程断言异常阻断 HtmlFoldingProjectService 初始化
+  - 根因：`I18nScanner.scanProject` 在 `Task.Backgroundable` 后台线程调用 `ProjectTypeChecker.isTraditionalJavaWebProject` → `MyApplicationService.isSpringCloudMesProject` 内 `PsiManager.findFile` 读 pom.xml **未持 read-action**，在 IntelliJ 线程断言下抛 `RuntimeExceptionWithAttachments`（idea.log 实证，帅威/海程等有 springboot+springcloud 目录的项目必现）；异常中断 `scanProject` 末尾的 `HtmlFoldingProjectService.getInstance()`——fileOpened 监听注册在其构造函数，链路一断所有新开文件不再创建 HtmlFoldingManager，inlay 全灭。
+  - 修复（根上）：`checkIsOldMesProject` 内部自持 `ReadAction.compute`，不再依赖调用方线程上下文。
+  - 修复（同类隐患）：`I18nCacheManager.scanI18nFiles` 的 `findModuleForFile`、`I18nFileListener.resolveModule`、`I18nCacheManager.findModuleForFile` 的 `getSourceRoots`——VFS 回调/后台线程上的模块模型查询统一包 read-action（嵌套无害）。
+  - 防御：传统项目索引扫描段 try-catch 兜底（只记 warn），保证 `HtmlFoldingProjectService` 初始化（inlay 创建链守门人）永不被扫描逻辑阻断。
+
+- 修复纯缓存化后 i18n 缓存的失效链路（事件增量刷新）
+  - 缺口 A：`I18nFileListener` 原按「文件在模块 resources/i18n 目录下」定位模块，传统 Java Web 项目的 i18n 文件不在该目录 → 编辑 properties 后缓存永不更新（启动索引扫描灌入的是死数据）。修复：模块解析优先 `ModuleUtilCore.findModuleForFile`（与启动扫描归属口径一致），i18n 目录匹配仅作回退。
+  - 缺口 B：`isI18nFile` 原匹配任意 `.properties`，config/database 等无关文件的每次保存都会触发模块解析 + 整文件加载。收紧为 i18n 形态文件名（`web_` 前缀或四语言后缀）。
+  - 缺口 C（预存）：`updateInlays` 的 diff 只比较源文本，properties 变更后已存在的 Inlay 永远显示旧译文。修复：diff 增加译文维度（value 变化即重建 Inlay）；同步清理 `rendererMap` 中已释放 inlay 的死条目，避免长会话滚动累积。
+  - 不引入定时刷新：失效源（文件变化）均有 VFS 事件覆盖——IDE 内保存即时触发，外部修改/SVN update 在窗口聚焦 refresh 后同样走 `VFS_CHANGES`；每次项目打开另有全量重扫兜底。定时轮询只会把已从热路径移除的索引查询换个地方重新引入。
+
+- 修复打开文件即卡顿 + 老年代堆积：编辑器生命周期泄漏与热路径索引兜底
+  - **泄漏（P0）**：`HtmlFoldingManager` 每实例通过 `project.getMessageBus().connect()`（无父级）订阅 VFS 变更，且从未注册 Disposer——每开一个文件永久滞留一条 MessageBus 连接 + 整个 Editor 对象图（document、inlayMap、markup 等），对应 jstat 老年代 80%+ 不降。修复：连接改为 `connect(this)`，并在 `getInstance` 中 `Disposer.register(editor, manager)`，editor 释放时级联清理订阅与 Inlay。
+  - **卡顿根因（P0）**：folding 占位符热路径（`MyXMLFoldingBuilder` 每标签、`CustomHtmlFoldingBuilder.getPlaceholderText`、`MyJspI18nFoldingBuilder`、`MyJavaScriptFoldingBuilder`、`MyFreemarkerHTMLAnnotator` 等）在缓存未命中时落到 `FilenameIndex`×4 语言 + `FileTypeIndex` 全项目 properties 扫描；大 Layout XML 一次折叠计算触发数百次索引查询，正是「打开文件就卡 + Eden 每几秒打满」的分配源。修复：`findModuleWebI18nPropertyValue` / `findModuleDataGridI18nPropertyValue` 改为纯缓存查询（未命中返回 null），索引查询仅保留在用户主动触发的翻译对话框路径。
+  - **缓存覆盖（配套）**：传统 Java Web 项目（老 MES）i18n 文件不在 `resources/i18n` 目录下，原靠上述索引兜底覆盖——现由 `I18nScanner.scanProject` 启动时按索引一次性找齐（`scanProjectResourcesByIndex`，smart mode 下执行）灌入缓存；扫描完成后刷新已打开编辑器的折叠与 Inlay，避免显示旧缓存 `${key}`。
+  - **降噪（P1）**：移除热路径 `System.out.println`（`MyFreemarkerHTMLAnnotator` 每元素 4~5 条、`I18nCacheManager.loadSingleFile`、`I18nFileListener` 每次 VFS 事件、`MyPsiUtil` key 提取），daemon 扫描不再同步写控制台。
+  - **caret 监听（P1）**：`FoldingCaretListener` 改用带 Disposable 的重载注册（绑定 editor 生命周期），修复原 `fileClosed` 从「关闭后新选中的 editor」移除监听器导致移错对象、旧 editor 上的监听器永不清理的问题；同时光标移动时无状态变化（无需折叠/展开）则跳过 `runBatchFoldingOperation`。
+
+- 修复 i18n Inlay 导致的内存泄漏（GC Thrashing / RangeHighlighter 堆积）
+  - 根因：`HtmlFoldingManager.updateInlays()` 对每个打开的编辑器**全文档**扫描 i18n 占位符并为每一个创建 Inlay（底层即 `RangeHighlighterImpl`/`RHNode`）；在大型 MES 项目里单个大文件可达数千 Inlay，多文件并行累积至百万级，成为 IntelliJ 进程内存耗尽、Full GC 暴挫的直接诱因。
+  - 措施 P0：
+    - **大文件保护**：`getTextLength() > 1MB` 时不再创建 Inlay，仅保留原生折叠（`Constants.I18N_INLAY_MAX_TEXT_LENGTH`）。
+    - **可见区域限制**：仅渲染视口内（上下各缓冲 50 行，`Constants.I18N_INLAY_VISIBLE_BUFFER_LINES`）的占位符，Inlay 数量由「全文档」降至「视口级」（约 1/10 以下）。
+    - **滚动动态加载**：`HtmlFoldingManager` 实现 `VisibleAreaListener`，滚动时 `visibleAreaChanged` 重新计算可见区域 Inlay，滚出视口的旧 Inlay 在 diff 阶段被 dispose 释放。
+
+  - 措施 P1（节流）：`HtmlFoldingManager` 引入 `Alarm` 做 200ms debounce（`scheduleUpdateInlays()`），合并高频文档变更与连续滚动事件，避免每次按键/滚动都重建 Inlay，进一步降低 CPU 与 GC 压力。
+
+  - 措施 P2（清理）：删除已 `@Deprecated` 且无任何引用的死代码 `HtmlFoldingProjectComponent.java`，消除重复订阅风险与维护负担。
+
 ## [2.0.11] - 2026-07-20
 
 - 增强 Java 方法引用解析能力

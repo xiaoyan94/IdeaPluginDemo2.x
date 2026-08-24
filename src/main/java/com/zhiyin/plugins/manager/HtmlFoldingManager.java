@@ -2,10 +2,13 @@ package com.zhiyin.plugins.manager;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.event.*;
+import com.intellij.openapi.editor.event.VisibleAreaListener;
+import com.intellij.openapi.editor.event.VisibleAreaEvent;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -16,6 +19,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
+import com.intellij.util.Alarm;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.newvfs.BulkFileListener;
@@ -42,9 +46,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.intellij.openapi.util.text.StringUtil.isNotEmpty;
+import static com.zhiyin.plugins.resources.Constants.I18N_INLAY_MAX_TEXT_LENGTH;
+import static com.zhiyin.plugins.resources.Constants.I18N_INLAY_VISIBLE_BUFFER_LINES;
 import static com.zhiyin.plugins.utils.MyPsiUtil.*;
 
-public class HtmlFoldingManager implements Disposable {
+public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
     private static final Key<HtmlFoldingManager> MANAGER_KEY = Key.create("html.folding.manager");
 
     private final Editor editor;
@@ -55,6 +61,9 @@ public class HtmlFoldingManager implements Disposable {
     private static final ExecutorService EXECUTOR =
             com.intellij.util.concurrency.AppExecutorUtil.createBoundedApplicationPoolExecutor("HtmlFoldingExecutor", 2);
     private final I18nCacheManager i18nCacheManager;
+    /** debounce 调度器：合并 200ms 内的多次文档/滚动变更，避免高频重建 Inlay */
+    private final Alarm scheduleAlarm = new Alarm(this);
+    private static final int UPDATE_DEBOUNCE_MS = 200;
 
     private HtmlFoldingManager(@NotNull Editor editor) {
         this.editor = editor;
@@ -83,13 +92,16 @@ public class HtmlFoldingManager implements Disposable {
         editor.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void documentChanged(@NotNull DocumentEvent event) {
-                SwingUtilities.invokeLater(() -> updateInlays());
+                scheduleUpdateInlays();
             }
         }, this);
 
-        // VFS变化监听
+        // 滚动/可见区域变化监听：重新计算可见区域内的 Inlay（配合可见区域限制，避免全量渲染）
+        editor.getScrollingModel().addVisibleAreaListener(this, this);
+
+        // VFS变化监听（连接绑定 this：manager 随 editor 释放时连接自动断开，不再泄漏到 project 生命周期）
         if (project != null) {
-            project.getMessageBus().connect().subscribe(VirtualFileManager.VFS_CHANGES, new BulkFileListener() {
+            project.getMessageBus().connect(this).subscribe(VirtualFileManager.VFS_CHANGES, new BulkFileListener() {
                 @Override
                 public void after(@NotNull List<? extends VFileEvent> events) {
                     for (VFileEvent event : events) {
@@ -113,6 +125,11 @@ public class HtmlFoldingManager implements Disposable {
         if (manager == null) {
             manager = new HtmlFoldingManager(editor);
             editor.putUserData(MANAGER_KEY, manager);
+            // editor 释放时级联释放 manager（清 Inlay、断 MessageBus 连接），否则每开一个文件泄漏一份。
+            // Editor 接口未直接实现 Disposable（EditorImpl 才实现），需 instanceof 判定
+            if (editor instanceof Disposable parentDisposable) {
+                Disposer.register(parentDisposable, manager);
+            }
         }
         return manager;
     }
@@ -180,11 +197,29 @@ public class HtmlFoldingManager implements Disposable {
     }
 
     public void updateInlays() {
+        // getVisibleArea() / Inlay 操作必须在 EDT 执行；若当前非 EDT 则重新调度到 EDT
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::updateInlays);
+            return;
+        }
         if (project == null || editor.isDisposed()) return;
+
+        // 大文件保护：文本长度超过阈值时不再创建 Inlay，避免海量 RangeHighlighter 导致内存溢出
+        if (editor.getDocument().getTextLength() > I18N_INLAY_MAX_TEXT_LENGTH) {
+            clearAllInlays();
+            return;
+        }
 
         String text = editor.getDocument().getText();
         VirtualFile virtualFile = FileDocumentManager.getInstance().getFile(editor.getDocument());
         if (virtualFile == null) return;
+
+        // 可见区域限制：仅渲染视口内（含上下缓冲）的占位符，避免全文档创建 Inlay
+        Rectangle visibleArea = editor.getScrollingModel().getVisibleArea();
+        int docLineCount = editor.getDocument().getLineCount();
+        int startLine = Math.max(0, editor.xyToLogicalPosition(new Point(0, visibleArea.y)).line - I18N_INLAY_VISIBLE_BUFFER_LINES);
+        int endLine = Math.min(docLineCount - 1,
+                editor.xyToLogicalPosition(new Point(0, visibleArea.y + visibleArea.height)).line + I18N_INLAY_VISIBLE_BUFFER_LINES);
 
         Pattern[] patterns = Constants.getPatternsByExtension(virtualFile.getExtension());
 
@@ -195,6 +230,9 @@ public class HtmlFoldingManager implements Disposable {
                 Matcher matcher = pattern.matcher(text);
                 while (matcher.find()) {
                     int startOffset = matcher.start();
+                    int line = editor.getDocument().getLineNumber(startOffset);
+                    // 仅保留可见区域（含缓冲）内的匹配，超出范围的跳过，不创建 Inlay
+                    if (line < startLine || line > endLine) continue;
                     int endOffset = matcher.end();
                     String matchedText = matcher.group();
                     String key = matcher.group(1);
@@ -207,22 +245,27 @@ public class HtmlFoldingManager implements Disposable {
 
             Set<String> toRemove = new HashSet<>();
 
-            // 1. 删除不再匹配的 inlay
+            // 1. 删除不再匹配的 inlay（包括滚动出可见区域、被过滤掉的旧 inlay）。
+            // 除源文本外还比较译文：properties 文件变更后缓存值更新（value 变化），
+            // 旧 inlay 必须重建才会显示新译文——只比 matchedText 会让已存在 inlay 永远显示旧值
             for (Map.Entry<String, Inlay<EditableHtmlFoldingRenderer>> entry : inlayMap.entrySet()) {
                 String mapKey = entry.getKey();
                 Inlay<EditableHtmlFoldingRenderer> inlay = entry.getValue();
                 // int offset = Integer.parseInt(mapKey.split("_")[1]); // key_offset
                 MatchInfo match = newMatches.get(mapKey);
-                String newText = match != null ? match.matchedText : null;
 
-                if (newText == null || !newText.equals(inlay.getRenderer().getOriginalText())) {
+                boolean stale = match == null
+                        || !match.matchedText.equals(inlay.getRenderer().getOriginalText())
+                        || !Objects.equals(match.value, inlay.getRenderer().getDisplayText());
+                if (stale) {
                     if (inlay.isValid()) inlay.dispose();
+                    rendererMap.remove(inlay); // 同步清理，避免 rendererMap 随滚动累积已释放 inlay 的死条目
                     toRemove.add(mapKey);
                 }
             }
             toRemove.forEach(inlayMap::remove);
 
-            // 2. 创建新的 inlay
+            // 2. 创建新的 inlay（仅可见区域内的匹配）
             for (MatchInfo match : newMatches.values()) {
                 String mapKey = match.key + "_" + match.startOffset; // 保持原逻辑 key
                 if (!inlayMap.containsKey(mapKey)) {
@@ -236,6 +279,25 @@ public class HtmlFoldingManager implements Disposable {
             }
 
         }).coalesceBy(Arrays.asList(this.getClass(), editor, virtualFile)).submit(EXECUTOR);
+    }
+
+    /**
+     * 滚动/可见区域变化回调：重新计算可见区域内的 Inlay。
+     * 配合 updateInlays 的可见区域限制，使 Inlay 随滚动动态加载/卸载，避免全量堆积。
+     */
+    @Override
+    public void visibleAreaChanged(@NotNull VisibleAreaEvent e) {
+        scheduleUpdateInlays();
+    }
+
+    /**
+     * debounce 调度：合并 UPDATE_DEBOUNCE_MS 窗口内的多次文档变更/滚动事件，
+     * 仅触发一次 updateInlays，减少高频输入或连续滚动时的 Inlay 重建开销。
+     */
+    private void scheduleUpdateInlays() {
+        if (editor.isDisposed()) return;
+        scheduleAlarm.cancelAllRequests();
+        scheduleAlarm.addRequest(this::updateInlays, UPDATE_DEBOUNCE_MS);
     }
 
 
