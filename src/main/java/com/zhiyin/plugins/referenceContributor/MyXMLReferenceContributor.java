@@ -6,11 +6,13 @@ import com.intellij.codeInsight.lookup.AutoCompletionPolicy;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.psi.*;
-import com.intellij.psi.search.searches.ReferencesSearch;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlAttributeValue;
 import com.intellij.psi.xml.XmlFile;
@@ -27,7 +29,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 public class MyXMLReferenceContributor extends PsiReferenceContributor {
 
@@ -122,25 +127,30 @@ public class MyXMLReferenceContributor extends PsiReferenceContributor {
                 results.add(new PsiElementResolveResult(psiMethod));
             }
             // 2) 反向补充目标：queryDaoDataT(..., "methodName", ...) 调用字符串。
-            //    复用引用体系——ReferencesSearch 查 Dao 方法的用法，MyJavaMethodReference.isReferenceTo
-            //    已把 queryDaoDataT 字符串认作用法，此处取其源元素（PsiLiteralExpression）作为跳转目标，
-            //    使 Mapper XML id 上 Ctrl+B 可同时选 Dao 方法与调用字符串。
-            //    只认 MyJavaMethodReference：真实 Java 调用 / 其他 XML id / Moc 引用不混入。
-            if (!DumbService.isDumb(getElement().getProject())) {
-                List<PsiElement> literals = new ArrayList<>();
-                for (PsiMethod psiMethod : psiMethods) {
-                    for (PsiReference reference : ReferencesSearch.search(psiMethod).findAll()) {
-                        if (reference instanceof MyJavaMethodReference
-                                && reference.getElement() != null
-                                && !literals.contains(reference.getElement())) {
-                            literals.add(reference.getElement());
+            //    用 word index 按字符串字面量正向搜索（只碰含该词的文件，毫秒级）。
+            //    不用 ReferencesSearch：对 PsiMethod 做全项目用法反查（几万文件，进度条漫长），
+            //    且搜索过程会回调各引用提供器，与 multiResolve 互相触发形成进度条循环。
+            //    过滤 MyJavaMethodReference：只认 queryDaoDataT 上下文的字符串，
+            //    真实 Java 调用 / 其他 XML id / Moc 引用不混入。
+            if (!DumbService.isDumb(getElement().getProject()) && methodName != null && !methodName.isEmpty()) {
+                PsiSearchHelper searchHelper = PsiSearchHelper.getInstance(getElement().getProject());
+                GlobalSearchScope javaScope = GlobalSearchScope.getScopeRestrictedByFileTypes(
+                        GlobalSearchScope.projectScope(getElement().getProject()), JavaFileType.INSTANCE);
+                Set<PsiFile> candidateFiles = Collections.newSetFromMap(new IdentityHashMap<>());
+                searchHelper.processAllFilesWithWordInLiterals(methodName, javaScope, candidateFiles::add);
+                for (PsiFile file : candidateFiles) {
+                    for (PsiLiteralExpression literal :
+                            com.intellij.psi.SyntaxTraverser.psiTraverser(file).filter(PsiLiteralExpression.class)) {
+                        if (!methodName.equals(literal.getValue())) continue;
+                        for (PsiReference reference : literal.getReferences()) {
+                            if (reference instanceof MyJavaMethodReference) {
+                                // 展示具体调用方法（如 bizCommonService.queryDaoDataT("getXxx")），定位不到时回退
+                                results.add(new PsiElementResolveResult(new CallSiteNavigationTarget(
+                                        literal, CallSiteNavigationTarget.buildDisplayText(literal, "queryDaoDataT", methodName))));
+                                break;
+                            }
                         }
                     }
-                }
-                for (PsiElement literal : literals) {
-                    // 包装为带展示信息的目标：选择框显示 queryDaoDataT("getXxx") + 文件名:行号，
-                    // 裸字面量只会显示带引号字符串、无任何上下文（同 StatementNavigationTarget 模式）
-                    results.add(new PsiElementResolveResult(new QueryDaoCallNavigationTarget(literal, methodName)));
                 }
             }
             return results.toArray(new ResolveResult[0]);

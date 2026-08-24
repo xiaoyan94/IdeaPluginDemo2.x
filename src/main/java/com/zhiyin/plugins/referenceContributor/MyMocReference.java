@@ -1,13 +1,13 @@
 package com.zhiyin.plugins.referenceContributor;
 
 import com.intellij.codeInsight.completion.PrioritizedLookupElement;
+import com.intellij.codeInsight.highlighting.HighlightedReference;
 import com.intellij.codeInsight.lookup.AutoCompletionPolicy;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
 import com.intellij.psi.xml.XmlAttributeValue;
 import com.zhiyin.plugins.oneClickNavigation.xml.domElements.Moc;
@@ -22,59 +22,88 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-public class MyMocReference extends PsiReferenceBase<PsiLiteralExpression> {
+/**
+ * bizCommonService.xxxMocData(..., "mocName", ...) / queryDaoDataT 风格调用中
+ * Moc 名称字符串的引用：解析到 Moc XML 的 name 属性值。
+ *
+ * poly 化 + isReferenceTo 覆写后，除正向 Ctrl+B 跳转外，
+ * Find Usages / Moc name 声明处 Ctrl+B / Rename 同步均可反查到该字符串。
+ */
+public class MyMocReference extends PsiReferenceBase<PsiLiteralExpression> implements PsiPolyVariantReference, HighlightedReference {
+
+    /**
+     * 懒缓存解析结果（multiResolve 高频调用；Moc 文件 map 查询 + 模块比对有开销）。
+     * 元素失效（文件被编辑）时自动重算。
+     */
+    private volatile ResolveResult[] cachedResults;
 
     public MyMocReference(@NotNull PsiLiteralExpression element, boolean soft) {
         super(element, soft);
     }
 
-    /**
-     * @return range in the {@link PsiElement#getContainingFile containing file} of the {@link #getElement element}
-     * which is considered a reference
-     * @see #getRangeInElement
-     */
     @Override
-    public @NotNull TextRange getAbsoluteRange() {
-        return super.getAbsoluteRange();
+    public ResolveResult @NotNull [] multiResolve(boolean incompleteCode) {
+        ResolveResult[] results = cachedResults;
+        if (results == null || !areResultsValid(results)) {
+            results = computeResolveResults();
+            cachedResults = results;
+        }
+        return results;
     }
 
-    /**
-     * Returns the element which is the target of the reference.
-     *
-     * @return the target element, or {@code null} if it was not possible to resolve the reference to a valid target.
-     * @see PsiPolyVariantReference#multiResolve(boolean)
-     */
-    @Override
-    public @Nullable PsiElement resolve() {
+    private ResolveResult @NotNull [] computeResolveResults() {
+        List<ResolveResult> results = new ArrayList<>();
         PsiLiteralExpression literal = getElement();
         String value = (String) literal.getValue();
-        if (value != null) {
-            // Resolve the XML file based on the value.
-            Project project = literal.getProject();
-            List<XmlAttributeValue> mocNameElement = MyMapperUtils.getMocListByName(project, value);
-            if (!mocNameElement.isEmpty()) {
-                for (XmlAttributeValue xmlAttributeValue : mocNameElement) {
-                    Module module1 = MyPsiUtil.getModuleByPsiElement(literal);
-                    if (module1 != null && module1.equals(MyPsiUtil.getModuleByPsiElement(xmlAttributeValue))) {
-                        return xmlAttributeValue;
-                    }
-                }
+        if (value == null) return results.toArray(new ResolveResult[0]);
+
+        List<XmlAttributeValue> mocNameElements = MyMapperUtils.getMocListByName(literal.getProject(), value);
+        Module callerModule = MyPsiUtil.getModuleByPsiElement(literal);
+        // 只保留同模块的 Moc（保持原 resolve() 口径）；调用方模块判定不出（jar 内等）时不降级跨模块，
+        // 宁可无目标也不误导
+        for (XmlAttributeValue xmlAttributeValue : mocNameElements) {
+            if (callerModule != null && callerModule.equals(MyPsiUtil.getModuleByPsiElement(xmlAttributeValue))) {
+                results.add(new PsiElementResolveResult(xmlAttributeValue));
             }
         }
-        return null;
+        return results.toArray(new ResolveResult[0]);
+    }
+
+    private static boolean areResultsValid(ResolveResult[] results) {
+        for (ResolveResult result : results) {
+            PsiElement element = result.getElement();
+            if (element == null || !element.isValid()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
-     * Returns the array of String, {@link PsiElement} and/or {@link LookupElement}
-     * instances representing all identifiers that are visible at the location of the reference. The contents
-     * of the returned array are used to build the lookup list for basic code completion. (The list
-     * of visible identifiers may not be filtered by the completion prefix string - the
-     * filtering is performed later by the IDE.)
-     * <p>
-     * This method is default since 2018.3.
-     *
-     * @return the array of available identifiers.
+     * 单一目标直接跳；多目标（多个模块同名 Moc）返回 null 弹选择框。
      */
+    @Nullable
+    @Override
+    public PsiElement resolve() {
+        ResolveResult[] resolveResults = multiResolve(false);
+        return resolveResults.length == 1 ? resolveResults[0].getElement() : null;
+    }
+
+    /**
+     * 反向匹配（Find Usages / 声明处 Ctrl+B / Rename 用法收集）统一判定：
+     * 遍历 multiResolve 比对，与正向目标集合一致。
+     */
+    @Override
+    public boolean isReferenceTo(@NotNull PsiElement element) {
+        for (ResolveResult result : multiResolve(false)) {
+            PsiElement resolved = result.getElement();
+            if (resolved != null && getElement().getManager().areElementsEquivalent(resolved, element)) {
+                return true;
+            }
+        }
+        return super.isReferenceTo(element);
+    }
+
     @Override
     public Object @NotNull [] getVariants() {
         PsiLiteralExpression element = getElement();

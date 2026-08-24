@@ -4,30 +4,36 @@
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-08-24
+
+- 修复：Moc/Mapper XML 侧 Ctrl+B 反查 Java 调用点时的进度条循环与全项目扫描
+  - 根因：两侧引用的 `multiResolve` 用 `ReferencesSearch`（PsiMethod / XML 属性值的全项目用法反查，几万文件）反查调用点，搜索过程又回调各引用提供器（含自身解析），解析-搜索互相触发，表现为「Resolving reference」进度条反复跑。
+  - 修复：统一改为 `PsiSearchHelper.processAllFilesWithWordInLiterals` 的 word index 正向搜索——先按字符串字面量定位候选文件（只碰含该词的文件，毫秒级），再在文件内过滤本插件引用（`MyJavaMethodReference` / `MyMocReference`），排除恰好同名文本的普通字符串。
+- 调整：Java "mocName" 字符串 Ctrl+B 只列同模块的 Moc XML（`MyMocReference.multiResolve` 严格同模块过滤，与原 `resolve()` 口径一致，跨模块同名 Moc 不再进入目标集合）。
+- 新增：Moc XML ↔ Java 调用双向导航（与 Mapper 侧同模式）
+  - `MyMocReference` 升级 poly 化 + `isReferenceTo` 覆写 + 解析懒缓存：bizCommonService.xxxMocData(..., "mocName", ...) 字符串的正向 Ctrl+B 保持跳 Moc XML name 属性（同模块优先）；**Find Usages / Moc name 声明处 Ctrl+B / Rename** 可反查到该字符串（此前 `PsiReferenceBase` 单目标默认实现下反向链路可用但未与多目标对齐）。
+  - 新增 `MyMocXmlReferenceContributor`：`<Moc name="xxx">` 的 name 值上注册正向引用，Ctrl+B 弹出 Java 调用点选择框（单调用点直接跳），条目展示**具体调用方法**（如 `bizCommonService.insertMocData("xxx")` + 文件名:行号，`CallSiteNavigationTarget.buildDisplayText` 取字面量所在方法调用表达式）。`isReferenceTo` 恒 false 防自递归；dumb mode 跳过；懒缓存。
+  - 调用点展示包装泛化为 `CallSiteNavigationTarget`（原 `QueryDaoCallNavigationTarget` 改名，展示文案参数化），Mapper 与 Moc 两侧共用。
 - 增强：queryDaoDataT 字符串方法名与 Dao 方法 / Mapper XML 标签的双向导航
   - `MyJavaMethodReference` 保持原双目标解析（Mapper XML 语句标签 + Dao 接口方法，Ctrl+B 仍弹选择框）不变，新增 `isReferenceTo` 覆写：遍历 `multiResolve` 结果与目标比对（对 `StatementNavigationTarget` 包装目标同时认其导航委托元素）。
   - 效果：Find Usages / 在 Dao 方法声明处 Ctrl+B 可反查到 `queryDaoDataT(..., "getXxx", ...)` 字符串用法；对 Dao 方法 Rename 时字符串同步改名。此前双目标下 `resolve()` 恒为 null，基类 `PsiReferenceBase.isReferenceTo` 默认实现导致反向链路整体失效。
   - Mapper XML 侧：`MyXMLReference`（id 值 → Dao 方法引用）的 `multiResolve` 增加反向目标——通过 `ReferencesSearch` 查 Dao 方法用法，取 `MyJavaMethodReference` 引用的源元素（queryDaoDataT 字符串）入目标集合，使 **XML id 上 Ctrl+B 弹出「Dao 方法 + queryDaoDataT 调用字符串」选择框**。字符串目标用 `QueryDaoCallNavigationTarget` 包装（新增，同 `StatementNavigationTarget` 模式）：展示 `queryDaoDataT("getXxx")` + 文件名:行号 + 插件图标，裸字面量在选择框中只有引号字符串无上下文。配套：`resolve()` 改为单目标直跳/多目标返回 null 的标准语义（原实现恒取首个目标，Ctrl+B 永远直接跳 Dao 不弹框）；解析结果懒缓存（用法搜索开销大）；`isReferenceTo` 覆写为只认 Dao 方法的轻量比对（不走 super 的 resolve 链，避免 multiResolve→ReferencesSearch→isReferenceTo 自递归）；dumb mode 下跳过用法搜索。
-
 - 修复 inlay 全部消失：启动扫描线程断言异常阻断 HtmlFoldingProjectService 初始化
   - 根因：`I18nScanner.scanProject` 在 `Task.Backgroundable` 后台线程调用 `ProjectTypeChecker.isTraditionalJavaWebProject` → `MyApplicationService.isSpringCloudMesProject` 内 `PsiManager.findFile` 读 pom.xml **未持 read-action**，在 IntelliJ 线程断言下抛 `RuntimeExceptionWithAttachments`（idea.log 实证，帅威/海程等有 springboot+springcloud 目录的项目必现）；异常中断 `scanProject` 末尾的 `HtmlFoldingProjectService.getInstance()`——fileOpened 监听注册在其构造函数，链路一断所有新开文件不再创建 HtmlFoldingManager，inlay 全灭。
   - 修复（根上）：`checkIsOldMesProject` 内部自持 `ReadAction.compute`，不再依赖调用方线程上下文。
   - 修复（同类隐患）：`I18nCacheManager.scanI18nFiles` 的 `findModuleForFile`、`I18nFileListener.resolveModule`、`I18nCacheManager.findModuleForFile` 的 `getSourceRoots`——VFS 回调/后台线程上的模块模型查询统一包 read-action（嵌套无害）。
   - 防御：传统项目索引扫描段 try-catch 兜底（只记 warn），保证 `HtmlFoldingProjectService` 初始化（inlay 创建链守门人）永不被扫描逻辑阻断。
-
 - 修复纯缓存化后 i18n 缓存的失效链路（事件增量刷新）
   - 缺口 A：`I18nFileListener` 原按「文件在模块 resources/i18n 目录下」定位模块，传统 Java Web 项目的 i18n 文件不在该目录 → 编辑 properties 后缓存永不更新（启动索引扫描灌入的是死数据）。修复：模块解析优先 `ModuleUtilCore.findModuleForFile`（与启动扫描归属口径一致），i18n 目录匹配仅作回退。
   - 缺口 B：`isI18nFile` 原匹配任意 `.properties`，config/database 等无关文件的每次保存都会触发模块解析 + 整文件加载。收紧为 i18n 形态文件名（`web_` 前缀或四语言后缀）。
   - 缺口 C（预存）：`updateInlays` 的 diff 只比较源文本，properties 变更后已存在的 Inlay 永远显示旧译文。修复：diff 增加译文维度（value 变化即重建 Inlay）；同步清理 `rendererMap` 中已释放 inlay 的死条目，避免长会话滚动累积。
   - 不引入定时刷新：失效源（文件变化）均有 VFS 事件覆盖——IDE 内保存即时触发，外部修改/SVN update 在窗口聚焦 refresh 后同样走 `VFS_CHANGES`；每次项目打开另有全量重扫兜底。定时轮询只会把已从热路径移除的索引查询换个地方重新引入。
-
 - 修复打开文件即卡顿 + 老年代堆积：编辑器生命周期泄漏与热路径索引兜底
   - **泄漏（P0）**：`HtmlFoldingManager` 每实例通过 `project.getMessageBus().connect()`（无父级）订阅 VFS 变更，且从未注册 Disposer——每开一个文件永久滞留一条 MessageBus 连接 + 整个 Editor 对象图（document、inlayMap、markup 等），对应 jstat 老年代 80%+ 不降。修复：连接改为 `connect(this)`，并在 `getInstance` 中 `Disposer.register(editor, manager)`，editor 释放时级联清理订阅与 Inlay。
   - **卡顿根因（P0）**：folding 占位符热路径（`MyXMLFoldingBuilder` 每标签、`CustomHtmlFoldingBuilder.getPlaceholderText`、`MyJspI18nFoldingBuilder`、`MyJavaScriptFoldingBuilder`、`MyFreemarkerHTMLAnnotator` 等）在缓存未命中时落到 `FilenameIndex`×4 语言 + `FileTypeIndex` 全项目 properties 扫描；大 Layout XML 一次折叠计算触发数百次索引查询，正是「打开文件就卡 + Eden 每几秒打满」的分配源。修复：`findModuleWebI18nPropertyValue` / `findModuleDataGridI18nPropertyValue` 改为纯缓存查询（未命中返回 null），索引查询仅保留在用户主动触发的翻译对话框路径。
   - **缓存覆盖（配套）**：传统 Java Web 项目（老 MES）i18n 文件不在 `resources/i18n` 目录下，原靠上述索引兜底覆盖——现由 `I18nScanner.scanProject` 启动时按索引一次性找齐（`scanProjectResourcesByIndex`，smart mode 下执行）灌入缓存；扫描完成后刷新已打开编辑器的折叠与 Inlay，避免显示旧缓存 `${key}`。
   - **降噪（P1）**：移除热路径 `System.out.println`（`MyFreemarkerHTMLAnnotator` 每元素 4~5 条、`I18nCacheManager.loadSingleFile`、`I18nFileListener` 每次 VFS 事件、`MyPsiUtil` key 提取），daemon 扫描不再同步写控制台。
   - **caret 监听（P1）**：`FoldingCaretListener` 改用带 Disposable 的重载注册（绑定 editor 生命周期），修复原 `fileClosed` 从「关闭后新选中的 editor」移除监听器导致移错对象、旧 editor 上的监听器永不清理的问题；同时光标移动时无状态变化（无需折叠/展开）则跳过 `runBatchFoldingOperation`。
-
 - 修复 i18n Inlay 导致的内存泄漏（GC Thrashing / RangeHighlighter 堆积）
   - 根因：`HtmlFoldingManager.updateInlays()` 对每个打开的编辑器**全文档**扫描 i18n 占位符并为每一个创建 Inlay（底层即 `RangeHighlighterImpl`/`RHNode`）；在大型 MES 项目里单个大文件可达数千 Inlay，多文件并行累积至百万级，成为 IntelliJ 进程内存耗尽、Full GC 暴挫的直接诱因。
   - 措施 P0：
@@ -175,7 +181,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.11...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.13...HEAD
+[2.0.13]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.11...v2.0.13
 [2.0.11]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.9...v2.0.10
 [2.0.9]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.8...v2.0.9

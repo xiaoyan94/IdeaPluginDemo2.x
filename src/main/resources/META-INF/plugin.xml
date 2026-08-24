@@ -57,6 +57,7 @@
 
         <psi.referenceContributor language="JAVA" implementation="com.zhiyin.plugins.referenceContributor.MyJavaReferenceContributor"/>
         <psi.referenceContributor language="XML" implementation="com.zhiyin.plugins.referenceContributor.MyXMLReferenceContributor"/>
+        <psi.referenceContributor language="XML" implementation="com.zhiyin.plugins.referenceContributor.MyMocXmlReferenceContributor"/>
 
         <completion.confidence language="JAVA" implementationClass="com.zhiyin.plugins.referenceContributor.MyCompletionConfidence"/>
 
