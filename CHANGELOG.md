@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [2.0.14] - 2026-08-25
+
+- 按模块收窄 XML 方法引用搜索范围
+
 ## [2.0.13] - 2026-08-24
 
 - 修复：Moc/Mapper XML 侧 Ctrl+B 反查 Java 调用点时的进度条循环与全项目扫描
@@ -181,7 +185,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.13...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.14...HEAD
+[2.0.14]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.13...v2.0.14
 [2.0.13]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.11...v2.0.13
 [2.0.11]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.9...v2.0.10

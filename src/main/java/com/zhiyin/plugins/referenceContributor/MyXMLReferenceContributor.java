@@ -7,6 +7,7 @@ import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.highlighter.JavaFileType;
+import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.patterns.PlatformPatterns;
@@ -134,8 +135,14 @@ public class MyXMLReferenceContributor extends PsiReferenceContributor {
             //    真实 Java 调用 / 其他 XML id / Moc 引用不混入。
             if (!DumbService.isDumb(getElement().getProject()) && methodName != null && !methodName.isEmpty()) {
                 PsiSearchHelper searchHelper = PsiSearchHelper.getInstance(getElement().getProject());
+                // 按模块过滤：搜索范围收窄到本 XML 所在模块，其他模块同名方法字面量不混入
+                //（多模块工作区里方法名字符串常见重名，且那些字面量的引用指向别的 namespace）。
+                // 模块判定不出时退回全项目，保持原行为。
+                Module xmlModule = MyPsiUtil.getModuleByPsiElement(getElement());
                 GlobalSearchScope javaScope = GlobalSearchScope.getScopeRestrictedByFileTypes(
-                        GlobalSearchScope.projectScope(getElement().getProject()), JavaFileType.INSTANCE);
+                        xmlModule != null ? GlobalSearchScope.moduleScope(xmlModule)
+                                          : GlobalSearchScope.projectScope(getElement().getProject()),
+                        JavaFileType.INSTANCE);
                 Set<PsiFile> candidateFiles = Collections.newSetFromMap(new IdentityHashMap<>());
                 searchHelper.processAllFilesWithWordInLiterals(methodName, javaScope, candidateFiles::add);
                 for (PsiFile file : candidateFiles) {
