@@ -275,6 +275,7 @@
         </action>
         <action id="com.zhiyin.plugins.actions.MybatisLogSQLAction" class="com.zhiyin.plugins.actions.MybatisLogSQLAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
 
         <action id="GenerateExcelHeader"

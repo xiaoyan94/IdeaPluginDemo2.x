@@ -617,7 +617,7 @@ class MyTranslateDialogWrapper(private val project: Project?, private val module
                             }.validationOnApply {
                                 if (it.text.isEmpty()) {
                                     error("Property key is required")
-                                } else if (checkI18nKeyExists(it.text) && !inputModel.propertyKeyExists) {
+                                } else if (runReadAction { checkI18nKeyExists(it.text) } && !inputModel.propertyKeyExists) {
                                     i18nKeyTextField.comment?.text = "已有key=${it.text}"
                                     error("该 property key 和已有key冲突，不能重复")
                                 } else {
@@ -708,11 +708,17 @@ class MyTranslateDialogWrapper(private val project: Project?, private val module
                 // SwingUtilities.invokeLater {
                     // 如果 key 已存在（并且中繁英 3 个 key 都存在），则使用该 key 值
                     if (foundProperties.isNotEmpty() && foundProperties.size >= 2) {
+                        // Property 的 key/value 是惰性解析的 PSI 读取，必须在 read-action 里完成。
+                        // 先在后台线程快照成纯字符串，EDT 的 invokeLater 只操作快照，
+                        // 否则抛 "Read access is allowed from inside read-action only"
                         var key = ""
+                        var values: List<String> = emptyList()
                         runReadAction {
                             key = foundProperties.first().key ?: ""
+                            values = foundProperties.map { it.value ?: "" }
                         }
                         val isNative2Ascii = MyPropertiesUtil.isNative2AsciiForPropertiesFiles()
+                        val toDisplayValue: (String) -> String = { if (!isNative2Ascii) it.unicodeToString() ?: "" else it }
                         SwingUtilities.invokeLater {
                             // 正好存在可用 key
                             inputModel.propertyKeyExists = true
@@ -720,16 +726,16 @@ class MyTranslateDialogWrapper(private val project: Project?, private val module
 
                             if (foundProperties.size == 2) {
                                 // 老项目只有中英翻译
-                                englishTextField.text(foundProperties[1].value?.let { if (!isNative2Ascii) it.unicodeToString() else it } ?: "")
+                                englishTextField.text(toDisplayValue(values[1]))
                             }
                             if (foundProperties.size >= 3) {
                                 // 中繁英
-                                chineseTWTextField.text(foundProperties[1].value?.let { if (!isNative2Ascii) it.unicodeToString() else it } ?: "")
-                                englishTextField.text(foundProperties[2].value?.let { if (!isNative2Ascii) it.unicodeToString() else it } ?: "")
+                                chineseTWTextField.text(toDisplayValue(values[1]))
+                                englishTextField.text(toDisplayValue(values[2]))
                             }
                             if (foundProperties.size >= 4) {
                                 // 越南语
-                                vietnameseTextField.text(foundProperties[3].value?.let { if (!isNative2Ascii) it.unicodeToString() else it } ?: "")
+                                vietnameseTextField.text(toDisplayValue(values[3]))
                             }
 
                             translateButton.component.isEnabled = true
