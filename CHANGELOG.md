@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [2.0.15] - 2026-08-31
+
+- 修复 EDT 线程中读取 PSI 导致的线程访问异常
+- MybatisLogSQLAction 增挂 EditorPopupMenu，编辑器右键菜单现在与 Console 一样可用（仍需先选中日志文本）。
+- MybatisLogSQLAction 多语句支持
+- 修正SVN提交时间显示时区偏移
+
 ## [2.0.14] - 2026-08-25
 
 - 按模块收窄 XML 方法引用搜索范围
@@ -185,7 +192,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.14...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.15...HEAD
+[2.0.15]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.14...v2.0.15
 [2.0.14]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.13...v2.0.14
 [2.0.13]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.11...v2.0.13
 [2.0.11]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.10...v2.0.11

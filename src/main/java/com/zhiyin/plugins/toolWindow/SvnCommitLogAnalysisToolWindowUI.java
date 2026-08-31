@@ -32,6 +32,12 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -132,7 +138,38 @@ public class SvnCommitLogAnalysisToolWindowUI {
     private List<String> lastAnalyzedWorkDirs = new ArrayList<>();
 
     private static final SimpleDateFormat DATE_FMT = new SimpleDateFormat("yyyy-MM-dd");
-    private static final SimpleDateFormat SVN_DATE_FMT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    /** 展示用日期时间格式（线程安全，替代原 SimpleDateFormat） */
+    private static final DateTimeFormatter SVN_DISPLAY_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * 将 svn log --xml 中的提交时间转换为本地时区展示。
+     * <p>
+     * SVN 输出的 {@code <date>} 为 UTC 时间（如 {@code 2026-06-10T10:30:00.000000Z}），
+     * 直接截取前 19 位会把 UTC 时间当成显示时间，导致北京时间少 8 小时。
+     * 此处先按 UTC/带偏移量解析为绝对时刻，再转换为系统默认时区后格式化。
+     * </p>
+     */
+    private static String toLocalDisplayDate(String dateStr) {
+        if (dateStr == null || dateStr.trim().length() < 19) return dateStr;
+        String raw = dateStr.trim();
+        LocalDateTime dateTime;
+        try {
+            // 形如 2026-06-10T10:30:00.000000Z 或 2026-06-10T10:30:00+08:00
+            OffsetDateTime odt = OffsetDateTime.parse(raw);
+            dateTime = odt.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
+        } catch (DateTimeParseException e) {
+            try {
+                // 无时区信息时按 UTC 处理（截断到秒，忽略多余的纳秒位）
+                dateTime = LocalDateTime.parse(raw.substring(0, 19))
+                        .atZone(ZoneOffset.UTC)
+                        .withZoneSameInstant(ZoneId.systemDefault())
+                        .toLocalDateTime();
+            } catch (DateTimeParseException ignored) {
+                return raw;
+            }
+        }
+        return SVN_DISPLAY_FMT.format(dateTime);
+    }
 
     /** 将 yyyy-MM-dd 格式的日期字符串加一天后返回 */
     private static String addOneDay(String dateStr) {
@@ -1411,12 +1448,9 @@ public class SvnCommitLogAnalysisToolWindowUI {
 
             if (revision == null || author == null) continue;
 
-            // 解析日期
-            String displayDate = dateStr;
-            if (dateStr != null && dateStr.length() >= 19) {
-                // "2026-06-10T10:30:00.000000Z" -> "2026-06-10 10:30:00"
-                displayDate = dateStr.substring(0, 10) + " " + dateStr.substring(11, 19);
-            }
+            // 解析日期：SVN 返回的是 UTC 时间，需转换为本地时区
+            // "2026-06-10T10:30:00.000000Z" -> "2026-06-10 18:30:00"（东八区）
+            String displayDate = toLocalDisplayDate(dateStr);
 
             // 保留完整提交消息（将换行转为空格，避免破坏表格行）
             String summary = msg != null ? msg.replace('\n', ' ').replace('\r', ' ').trim() : "";
