@@ -8,6 +8,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,35 +47,38 @@ public class MybatisLogSQLAction extends AnAction {
         Pattern preparedPattern = Pattern.compile("Preparing: (.+)");
         Pattern parametersPattern = Pattern.compile("Parameters: (.+)");
 
-        Matcher preparedMatcher = preparedPattern.matcher(log);
+        // Collect all Parameters matches with their offsets, so each Preparing pairs with the nearest following Parameters
+        List<Integer> parametersStarts = new ArrayList<>();
+        List<String[]> parametersList = new ArrayList<>();
         Matcher parametersMatcher = parametersPattern.matcher(log);
-
-        String sqlTemplate = null;
-        String[] parameters = null;
-
-        // Extract SQL template
-        if (preparedMatcher.find()) {
-            sqlTemplate = preparedMatcher.group(1).trim();
+        while (parametersMatcher.find()) {
+            parametersStarts.add(parametersMatcher.start());
+            parametersList.add(parametersMatcher.group(1).trim().split(",\\s*"));
         }
 
-        // Extract parameters
-        if (parametersMatcher.find()) {
-            String paramString = parametersMatcher.group(1).trim();
-            parameters = paramString.split(",\\s*");
+        // Each Preparing produces one statement; multiple statements are separated by blank lines
+        List<String> sqlList = new ArrayList<>();
+        Matcher preparedMatcher = preparedPattern.matcher(log);
+        int paramIndex = 0;
+        while (preparedMatcher.find()) {
+            String sqlTemplate = preparedMatcher.group(1).trim();
+            String[] parameters = null;
+            if (paramIndex < parametersList.size() && parametersStarts.get(paramIndex) > preparedMatcher.start()) {
+                parameters = parametersList.get(paramIndex);
+                paramIndex++;
+            }
+
+            // Replace placeholders with actual parameter values, then format SQL
+            String finalSql = formatSql(replaceSqlPlaceholders(sqlTemplate, parameters));
+            sqlList.add(finalSql + ";");
         }
 
         // If no SQL template found, return error message
-        if (sqlTemplate == null) {
+        if (sqlList.isEmpty()) {
             return "无法从日志中提取SQL";
         }
 
-        // Replace placeholders with actual parameter values
-        String finalSql = replaceSqlPlaceholders(sqlTemplate, parameters);
-
-        // Format SQL
-        finalSql = formatSql(finalSql);
-
-        return finalSql + ";";
+        return String.join("\n\n", sqlList);
     }
 
     private String formatSql(String sql) {
