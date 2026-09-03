@@ -143,7 +143,9 @@ public final class MyProjectService {
     private void initXmlFileMap(ProgressIndicator indicator) {
         System.out.println("initXmlFileMap: runReadAction Current thread:" + Thread.currentThread().getName());
         final AtomicReference<Collection<VirtualFile>> virtualFiles = new AtomicReference<>();
-        ApplicationManager.getApplication().runReadAction(() -> {
+        // 索引查询须在 smart mode 下执行：启动期 dumb mode 中查 stub 系索引会与索引器竞态，
+        // 触发 "Outdated stub in index"（StubTreeLoaderImpl.diagnoseLengthMismatch）
+        DumbService.getInstance(project).runReadActionInSmartMode(() -> {
             virtualFiles.set(FileTypeIndex.getFiles(XmlFileType.INSTANCE, GlobalSearchScope.allScope(project)));
         });
 
