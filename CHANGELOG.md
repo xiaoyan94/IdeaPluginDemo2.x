@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [2.0.17] - 2026-09-10
+
+- 新增查看表结构及 Moc 调用导航功能
+- 新增 ShowTableStructureAction：选中表名右键连库查看表结构，支持多数据源切换与记忆
+- 新增 TableStructure/TableStructurePopup：表结构模型与结果弹窗展示
+- 新增 MyMocXmlReferenceContributor：Moc XML name 属性 Ctrl+B 跳转到所有 Java 调用点
+- 新增 CallSiteNavigationTarget：调用点导航目标包装，展示调用方法上下文
+
 ## [2.0.16] - 2026-09-03
 
 - 优化：修复启动期索引竞态可能导致的异常
@@ -196,7 +204,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.16...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.17...HEAD
+[2.0.17]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.16...v2.0.17
 [2.0.16]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.15...v2.0.16
 [2.0.15]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.14...v2.0.15
 [2.0.14]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.13...v2.0.14

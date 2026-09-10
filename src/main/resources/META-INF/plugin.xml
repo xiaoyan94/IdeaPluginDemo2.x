@@ -278,6 +278,15 @@
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
 
+        <!-- 选中表名右键连库查看表结构：数据源来自项目 .properties 的 database.url 配置
+             text/description 走 messages.MyBundle 的 action.<id>.text/.description -->
+<!--        <action id="com.zhiyin.plugins.actions.ShowTableStructureAction"
+                class="com.zhiyin.plugins.actions.ShowTableStructureAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
+            <add-to-group group-id="com.zhiyin.plugins.EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
+        </action>-->
+
         <action id="GenerateExcelHeader"
                 class="com.zhiyin.plugins.actions.GenerateExcelHeaderAction"
                 icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
