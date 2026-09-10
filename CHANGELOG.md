@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [2.0.18] - 2026-09-10
+
+- 启用表结构查看菜单项
+
 ## [2.0.17] - 2026-09-10
 
 - 新增查看表结构及 Moc 调用导航功能
@@ -204,7 +208,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.17...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.18...HEAD
+[2.0.18]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.17...v2.0.18
 [2.0.17]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.16...v2.0.17
 [2.0.16]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.15...v2.0.16
 [2.0.15]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.14...v2.0.15
