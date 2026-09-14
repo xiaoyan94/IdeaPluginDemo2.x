@@ -17,7 +17,6 @@ import com.zhiyin.plugins.notification.MyPluginMessages;
 import com.zhiyin.plugins.resources.MyIcons;
 import com.zhiyin.plugins.service.CodeGenerateService;
 import com.zhiyin.plugins.utils.*;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,6 +31,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
 
 //@Service(Service.Level.PROJECT)
 public class DataModelGenerator {
@@ -322,7 +323,7 @@ public class DataModelGenerator {
                     new InputValidatorEx() {
                         @Override
                         public @NlsContexts.DetailedDescription @Nullable String getErrorText(@NonNls String inputString) {
-                            if (StringUtils.isBlank(inputString) || !inputString.toLowerCase().contains("select")) {
+                            if (isEmptyOrSpaces(inputString) || !inputString.toLowerCase().contains("select")) {
                                 return "请输入有效的 SQL 语句";
                             }
                             return null;
@@ -350,7 +351,7 @@ public class DataModelGenerator {
                 continue;
             }
 
-            if (StringUtils.isBlank((String) field.get("name"))) {
+            if (isEmptyOrSpaces((String) field.get("name"))) {
                 continue;
             }
 
@@ -458,12 +459,12 @@ public class DataModelGenerator {
         CodeGenerateService service = project.getService(CodeGenerateService.class);
 
         // 检查 fields name、type必须有值
-        if (this.fields.stream().anyMatch(field -> StringUtils.isBlank((String) field.get("name")) || StringUtils.isBlank((String) field.get("type")))) {
+        if (this.fields.stream().anyMatch(field -> isEmptyOrSpaces((String) field.get("name")) || isEmptyOrSpaces((String) field.get("type")))) {
             MyPluginMessages.showWarning("无法继续生成", "字段名或类型为空", project);
             return;
         }
 
-        if (dataMaintenanceRadioButton.isSelected() && !this.fields.isEmpty() && StringUtils.isBlank(this.tableName)){
+        if (dataMaintenanceRadioButton.isSelected() && !this.fields.isEmpty() && isEmptyOrSpaces(this.tableName)){
             this.tableName = Messages.showInputDialog(
                     project,
                     "请输入表名：",
@@ -472,7 +473,7 @@ public class DataModelGenerator {
             );
         }
 
-        if (StringUtils.isBlank(this.tableName) || this.module == null || this.fields.isEmpty()) {
+        if (isEmptyOrSpaces(this.tableName) || this.module == null || this.fields.isEmpty()) {
             MyPluginMessages.showWarning("无法继续生成", "模型数据为空", project);
             return;
         }
@@ -494,7 +495,7 @@ public class DataModelGenerator {
                         if (inputString.length() > 64) {
                             return "GridName不能超过64个字符";
                         }
-                        return StringUtils.isBlank(inputString) ? "GridName不能为空" : null;
+                        return isEmptyOrSpaces(inputString) ? "GridName不能为空" : null;
                     }
                 }
         );
@@ -513,7 +514,7 @@ public class DataModelGenerator {
                         if (inputString.length() > 64) {
                             return "不能超过64个字符";
                         }
-                        return StringUtils.isBlank(inputString) ? "页面名称不能为空" : null;
+                        return isEmptyOrSpaces(inputString) ? "页面名称不能为空" : null;
                     }
                 }
         );

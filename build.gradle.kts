@@ -3,6 +3,9 @@ import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PatchPluginXmlTask
+import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.PathSensitivity
+import java.util.Properties
 
 plugins {
     id("java") // Java support
@@ -174,6 +177,45 @@ tasks {
 
     buildPlugin {
         archiveFileName.set("${pluginName}-${pluginVersion}.zip")
+    }
+
+    // 仓库内 config.properties 只保留占位符；真实密钥放项目根 config.local.properties（见
+    // config.local.properties.example）。拷贝完成后用其覆盖同名 key 的值，使 runIde 与打包产物
+    // 自动携带真实密钥而真实值永不进仓库；本地文件缺失时按占位符打包，构建不失败。
+    named<Copy>("processResources") {
+        // 局部值（勿引用脚本顶层 val，config cache 不允许序列化脚本对象）
+        val secretsFile = layout.projectDirectory.file("config.local.properties").asFile
+        val targetFile = layout.buildDirectory.file("resources/main/config.properties")
+        // 注意用集合语义 inputs.files()：单个 @InputFile 要求文件必须存在，
+        // 而"本地密钥文件可选存在"需要缺失时不触发校验失败（增删仍参与 up-to-date 指纹）
+        inputs.files(secretsFile)
+            .withPropertyName("localSecrets")
+            .withPathSensitivity(PathSensitivity.NONE)
+        doLast {
+            val target = targetFile.get().asFile
+            if (!secretsFile.isFile) {
+                println("⚙ config.local.properties 不存在：config.properties 保持占位符（翻译功能不可用）")
+                return@doLast
+            }
+            val secrets = Properties().apply { secretsFile.inputStream().use { load(it) } }
+            val names = secrets.stringPropertyNames()
+            if (names.isEmpty()) return@doLast
+            val seen = mutableSetOf<String>()
+            val replaced = target.readText(Charsets.UTF_8).lines().map { line ->
+                val t = line.trim()
+                val key = t.substringBefore('=', "")
+                if (t.isNotEmpty() && !t.startsWith("#") && t.contains('=') && key in names) {
+                    seen.add(key)
+                    "$key=${secrets.getProperty(key)}"
+                } else {
+                    line
+                }
+            }
+            val appended = names.filter { it !in seen }.map { "$it=${secrets.getProperty(it)}" }
+            (replaced + appended).joinToString("\n", postfix = "\n")
+                .let { target.writeText(it, Charsets.UTF_8) }
+            println("⚙ 已从 config.local.properties 注入 ${seen.size + appended.size} 项到打包资源 config.properties")
+        }
     }
 
     wrapper {

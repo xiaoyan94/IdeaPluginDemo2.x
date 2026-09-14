@@ -27,13 +27,14 @@ import com.zhiyin.plugins.utils.StringUtil;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
-import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+
+import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
 
 @Service(Service.Level.PROJECT)
 public final class CodeGenerateService {
@@ -490,7 +491,7 @@ public final class CodeGenerateService {
 
     private String formatSql(String sql) {
         // 1. 检查输入是否为空，如果为空则直接返回空字符串
-        if (StringUtils.isBlank(sql)) {
+        if (isEmptyOrSpaces(sql)) {
             return "";
         }
 

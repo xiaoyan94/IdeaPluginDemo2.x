@@ -1,6 +1,5 @@
 package com.zhiyin.plugins.service;
 
-import com.google.common.collect.HashBasedTable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
@@ -14,13 +13,13 @@ import com.intellij.ide.highlighter.XmlFileType;
 import com.intellij.openapi.vfs.VirtualFile;
 
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service(Service.Level.PROJECT)
 public final class ComboboxUrlService {
 
     private final Project project;
-    private final HashBasedTable<String, String, Set<String>> cache = HashBasedTable.create();
+    private final Map<String, Map<String, Set<String>>> cache = new ConcurrentHashMap<>();
 
     public ComboboxUrlService(Project project) {
         this.project = project;
@@ -29,16 +28,23 @@ public final class ComboboxUrlService {
     }
 
     public Set<String> getCachedResults(String tagName, String attr) {
-        Set<String> list = cache.get(tagName, attr);
-        if (!cache.contains(tagName, attr) || list == null || list.isEmpty()) {
+        Set<String> list = getCached(tagName, attr);
+        if (list == null) {
+            // 未命中才重扫；缓存的空集视为有效负缓存，避免补全热路径反复全项目扫描
             searchAndCacheXmlTags(tagName, attr);
+            list = getCached(tagName, attr);
         }
         return new HashSet<>(list == null ? Collections.emptySet() : list);
     }
 
+    private Set<String> getCached(String tagName, String attr) {
+        Map<String, Set<String>> row = cache.get(tagName);
+        return row == null ? null : row.get(attr);
+    }
+
     public void searchAndCacheXmlTags(String tagName, String attr) {
         Set<String> results = searchXmlTags(tagName, attr);
-        cache.put(tagName, attr, results);
+        cache.computeIfAbsent(tagName, k -> new ConcurrentHashMap<>()).put(attr, results);
     }
 
     private Set<String> searchXmlTags(String tagName, String attr) {

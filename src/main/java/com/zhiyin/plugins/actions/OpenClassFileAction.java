@@ -11,8 +11,9 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
+
+import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
 
 public class OpenClassFileAction extends AnAction {
 
@@ -35,7 +36,7 @@ public class OpenClassFileAction extends AnAction {
         // Determine the path to the compiled class file
         String classFilePath = deriveClassFilePath(sourceFile);
 
-        if (StringUtils.isBlank(classFilePath)) {
+        if (isEmptyOrSpaces(classFilePath)) {
             Messages.showErrorDialog(project, "Failed to locate the corresponding class file.", "Error");
             return;
         }

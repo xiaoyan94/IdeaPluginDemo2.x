@@ -34,7 +34,6 @@ import com.zhiyin.plugins.renderer.EditableHtmlFoldingRenderer;
 import com.zhiyin.plugins.resources.Constants;
 import com.zhiyin.plugins.utils.MyPropertiesUtil;
 import com.zhiyin.plugins.utils.MyPsiUtil;
-import e.Y.S;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.SwingUtilities;

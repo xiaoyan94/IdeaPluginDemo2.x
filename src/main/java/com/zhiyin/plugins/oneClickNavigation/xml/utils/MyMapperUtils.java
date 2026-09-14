@@ -7,7 +7,6 @@ import com.zhiyin.plugins.oneClickNavigation.xml.domElements.Mapper;
 import com.zhiyin.plugins.oneClickNavigation.xml.domElements.Moc;
 import com.zhiyin.plugins.oneClickNavigation.xml.domElements.Statement;
 import com.zhiyin.plugins.service.MyProjectService;
-import org.apache.commons.collections.CollectionUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +18,7 @@ public final class MyMapperUtils {
         List<Statement> statements = new ArrayList<>();
         Map<String, List<Mapper>> xmlFileMap = project.getService(MyProjectService.class).getXmlFileMap();
         List<Mapper> mappers = xmlFileMap.get(namespace);
-        if (!CollectionUtils.isEmpty(mappers)) {
+        if (mappers != null && !mappers.isEmpty()) {
             for (Mapper mapper : mappers) {
                 statements.addAll(mapper.getStatements());
             }
@@ -31,7 +30,7 @@ public final class MyMapperUtils {
         List<XmlAttributeValue> statements = new ArrayList<>();
         Map<String, List<Mapper>> xmlFileMap = project.getService(MyProjectService.class).getXmlFileMap();
         List<Mapper> mappers = xmlFileMap.get(namespace);
-        if (!CollectionUtils.isEmpty(mappers)) {
+        if (mappers != null && !mappers.isEmpty()) {
             for (Mapper mapper : mappers) {
                 statements.add(mapper.getNamespace().getXmlAttributeValue());
             }
@@ -44,7 +43,7 @@ public final class MyMapperUtils {
         List<XmlAttributeValue> mocList = new ArrayList<>();
         Map<String, List<Moc>> xmlFileMap = project.getService(MyProjectService.class).getMocFileMap();
         List<Moc> mappers = xmlFileMap.get(mocName);
-        if (!CollectionUtils.isEmpty(mappers)) {
+        if (mappers != null && !mappers.isEmpty()) {
             for (Moc moc : mappers) {
                 mocList.add(moc.getName().getXmlAttributeValue());
             }

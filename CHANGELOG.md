@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [2.0.20] - 2026-09-14
+
+build: 移除冗余依赖并支持本地密钥注入
+
+- 移除 apache commons 及无效导入，改用 IntelliJ 平台工具类；
+- 优化 ComboboxUrlService 缓存为 ConcurrentHashMap 并支持负缓存；
+- processResources 支持从 config.local.properties 注入真实密钥， config.properties 改为占位符，新增本地配置文件忽略规则。
+
+## [2.0.19] - 2026-09-14
+
+优化依赖与缓存
+
+- 移除 apache commons 及无效导入，改用 IntelliJ 平台工具类
+- 优化 ComboboxUrlService 缓存结构，使用 ConcurrentHashMap 并支持负缓存
+
 ## [2.0.18] - 2026-09-10
 
 - 启用表结构查看菜单项
@@ -208,7 +223,9 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.18...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.20...HEAD
+[2.0.20]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.19...v2.0.20
+[2.0.19]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.18...v2.0.19
 [2.0.18]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.17...v2.0.18
 [2.0.17]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.16...v2.0.17
 [2.0.16]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.15...v2.0.16

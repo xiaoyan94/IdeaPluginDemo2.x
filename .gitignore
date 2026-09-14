@@ -4,4 +4,5 @@
 .qodana
 build
 /local-publish/
+/config.local.properties
 .idea/*.xml

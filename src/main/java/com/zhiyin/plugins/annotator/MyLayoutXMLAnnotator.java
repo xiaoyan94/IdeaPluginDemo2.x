@@ -19,7 +19,6 @@ import com.zhiyin.plugins.resources.Constants;
 import com.zhiyin.plugins.resources.MyIcons;
 import com.zhiyin.plugins.utils.MyPropertiesUtil;
 import com.zhiyin.plugins.utils.MyPsiUtil;
-import org.apache.commons.collections.MapUtils;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -54,7 +53,7 @@ public class MyLayoutXMLAnnotator implements Annotator {
                     // 从缓存中获取
                     I18nCacheManager i18nCacheManager = project.getService(I18nCacheManager.class);
                     Map<String, String> values = i18nCacheManager.getValuesByKey(module.getName(), I18nCacheManager.ResourceType.DATAGRID, i18nKey);
-                    if (MapUtils.isEmpty(values)) {
+                    if (values == null || values.isEmpty()) {
                         annotationHolder.newAnnotation(HighlightSeverity.WEAK_WARNING, Constants.INVALID_I18N_KEY)
                                         .range(xmlToken.getTextRange())
                                         .tooltip(Constants.INVALID_I18N_KEY)
