@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.0.24] - 2026-09-15
+
+fix: 修复 IDEA 2026.2 新 Search Everywhere 下 URL 搜索报错且搜不到结果，默认快捷键改为 Ctrl+Alt+Shift+\
+
+- 2026.2 本地默认启用新 Search Everywhere（SeFrontendService）：第三方 legacy searchEverywhereContributor 不被接入（withAdaptedLegacyContributors=false），"/url" 前缀搜不出结果；getCurrentlyShownUI() 直接抛 UnsupportedOperationException。UrlQuickSearchAction 不再走 SE，统一改为打开 OneClickNavigation 工具窗口并聚焦 URL 输入框（全平台行为一致）
+- NewControllerToolWindowUI 新增 focusUrlField()：聚焦输入框并全选旧值，输入即替换
+- 默认快捷键 Ctrl+Shift+\ 改为 Ctrl+Alt+Shift+\：IDEA Ultimate 2026.x 内置 Go to URL（GotoUrlAction，microservices-plugin）默认占用 control shift BACK_SLASH，插件侧无法移除平台绑定，保留必然冲突
+- UrlSearchEverywhereContributor（legacy SE EP）保留注册：旧 SE 用户手动输入 /url 前缀仍可触发
+
 ## [2.0.22] - 2026-09-15
 
 feat: 新增 Ctrl+Shift+\ 直达 URL 搜索
@@ -238,7 +247,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.22...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.24...HEAD
+[2.0.24]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.22...v2.0.24
 [2.0.22]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.21...v2.0.22
 [2.0.21]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.20...v2.0.21
 [2.0.20]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.19...v2.0.20

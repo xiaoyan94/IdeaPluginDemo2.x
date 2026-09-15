@@ -118,6 +118,14 @@ public class NewControllerToolWindowUI {
         urlField.setText(text);
     }
 
+    /**
+     * 新 Search Everywhere 下降级入口：聚焦 URL 输入框并全选旧值，输入即替换
+     */
+    public void focusUrlField() {
+        urlField.selectAll();
+        urlField.requestFocusInWindow();
+    }
+
     public void clickJumpButton() {
         doSearch();
     }

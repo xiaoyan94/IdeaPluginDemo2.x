@@ -276,9 +276,9 @@
         <action id="com.zhiyin.plugins.actions.UrlQuickSearchAction"
                 class="com.zhiyin.plugins.actions.UrlQuickSearchAction"
                 icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
-                text="URL 搜索（Ctrl+Shift+\）"
-                description="打开 Search Everywhere 并预填 /url，搜索 Controller/Feign 映射">
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift BACK_SLASH"/>
+                text="URL 搜索（Ctrl+Alt+Shift+\）"
+                description="打开 OneClickNavigation 工具窗口并聚焦 URL 搜索（不依赖 Search Everywhere）">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift BACK_SLASH"/>
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
         </action>
         <action id="com.zhiyin.plugins.actions.MybatisLogSQLAction" class="com.zhiyin.plugins.actions.MybatisLogSQLAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
