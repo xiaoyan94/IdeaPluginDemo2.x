@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [2.0.22] - 2026-09-15
+
+feat: 新增 Ctrl+Shift+\ 直达 URL 搜索
+
+- 新增 UrlQuickSearchAction：打开 Search Everywhere（All 页签）并预填 "/url "，输入即搜 Controller/Feign 映射（补上 2.0.5 提交信息承诺但未实现的快捷键）
+- 修复预填文本默认全选、一输入就整段覆盖的问题：收起选区并把光标定位到末尾，输入直接追加（平台 SearchEverywhereManagerImpl#show 对预填文本默认 selectAll）
+
 ## [2.0.21] - 2026-09-15
 
 fix: 修复 ComboboxUrlService 负缓存导致补全缓存为空且无法刷新的回归
@@ -231,7 +238,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.21...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.22...HEAD
+[2.0.22]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.21...v2.0.22
 [2.0.21]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.20...v2.0.21
 [2.0.20]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.19...v2.0.20
 [2.0.19]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.18...v2.0.19

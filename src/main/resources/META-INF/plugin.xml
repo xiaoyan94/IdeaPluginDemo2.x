@@ -273,6 +273,14 @@
             <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="after"
                           relative-to-action="com.zhiyin.plugins.actions.CollectUrlsAction"/>
         </action>
+        <action id="com.zhiyin.plugins.actions.UrlQuickSearchAction"
+                class="com.zhiyin.plugins.actions.UrlQuickSearchAction"
+                icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2"
+                text="URL 搜索（Ctrl+Shift+\）"
+                description="打开 Search Everywhere 并预填 /url，搜索 Controller/Feign 映射">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift BACK_SLASH"/>
+            <add-to-group group-id="com.zhiyin.plugins.ToolsMenuGroup" anchor="last"/>
+        </action>
         <action id="com.zhiyin.plugins.actions.MybatisLogSQLAction" class="com.zhiyin.plugins.actions.MybatisLogSQLAction" icon="com.zhiyin.plugins.resources.MyIcons.pandaIconSVG16_2">
             <add-to-group group-id="ConsoleView.PopupMenu" anchor="first"/>
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
