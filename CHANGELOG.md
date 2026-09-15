@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.0.25] - 2026-09-15
+
+fix: 代码生成器重复生成不再把文件降级写到模块根目录，逐文件弹窗改为一次汇总通知（codegen 改造 P1-1）
+
+- generateXmlFile 改为返回结果枚举（SUCCESS / SKIP_FILE_EXISTS / FAIL_DIR_NOT_FOUND）：目标目录不存在或文件已存在时直接跳过，不再弹错误框后降级写入模块 content root（半途重跑在模块根产生垃圾文件的根因）；仅保留 content root 缺失时的异常中断
+- generateBaseQueryTypeFile / generateMocFile / generateLayoutFile 收集各产物结果，生成结束后一次汇总通知（成功 N 个列出文件名、已存在跳过 M 个、目录不存在跳过 M 个），替代原先逐文件「代码生成成功」通知；查询页 6 件与 Moc 各一条汇总（两者走独立服务方法，待 P3-3 表单化时统一）
+- 移除写盘后 invokeLater 里的全局 LocalFileSystem.refresh(true) 同步刷新（VCS 感知由 VcsDirtyScopeManager.fileDirty 承担）
+- 携带 codegen 改造阶段 0 产物：生成回归基线（docs/codegen-baseline，biz_base_factory 7 件套 + 输入 DDL）、TableParser / formatSql 快照单测（11 用例）、改造计划文档 docs/codegen-refactor-plan.md 及 CLAUDE.md 接入说明
+
 ## [2.0.24] - 2026-09-15
 
 fix: 修复 IDEA 2026.2 新 Search Everywhere 下 URL 搜索报错且搜不到结果，默认快捷键改为 Ctrl+Alt+Shift+\
@@ -247,7 +256,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.24...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.25...HEAD
+[2.0.25]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.24...v2.0.25
 [2.0.24]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.22...v2.0.24
 [2.0.22]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.21...v2.0.22
 [2.0.21]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.20...v2.0.21

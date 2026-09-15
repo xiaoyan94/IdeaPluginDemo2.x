@@ -166,14 +166,17 @@ public final class CodeGenerateService {
         dmMoc.put("fields", fields);
 
         // Generate the XML file
+        Map<String, GenerateFileResult> results = new LinkedHashMap<>();
         try {
             String outputSourceContentRootPath = "src/main/webapp/WEB-INF/etc/business/model/" + folder;
             if (ProjectTypeChecker.isTraditionalJavaWebProject(project, module)){
                 outputSourceContentRootPath = "src/main/resources/META-INF/resources/WEB-INF/etc/business/model/" + folder;
             }
-            generateXmlFile(project, module, dmMoc, "moc.ftl", outputSourceContentRootPath, dmMoc.get("mocName") + ".xml");
+            results.put(dmMoc.get("mocName") + ".xml", generateXmlFile(project, module, dmMoc, "moc.ftl", outputSourceContentRootPath, dmMoc.get("mocName") + ".xml"));
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
+        } finally {
+            notifyGenerateSummary(results);
         }
     }
 
@@ -262,14 +265,17 @@ public final class CodeGenerateService {
         dmLayout.put("dataGrids", List.of(dataGrid1));
 
         // Generate the XML file
+        Map<String, GenerateFileResult> results = new LinkedHashMap<>();
         try {
             String outputSourceContentRootPath = "src/main/webapp/WEB-INF/etc/business/layout/" + folder;
             if (ProjectTypeChecker.isTraditionalJavaWebProject(project, module)){
                 outputSourceContentRootPath = "src/main/resources/META-INF/resources/WEB-INF/etc/business/layout/" + folder;
             }
-            generateXmlFile(project, module, dmLayout, "layout.ftl", outputSourceContentRootPath, dmLayout.get("layoutName") + ".xml");
+            results.put(dmLayout.get("layoutName") + ".xml", generateXmlFile(project, module, dmLayout, "layout.ftl", outputSourceContentRootPath, dmLayout.get("layoutName") + ".xml"));
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
+        } finally {
+            notifyGenerateSummary(results);
         }
     }
 
@@ -366,6 +372,7 @@ public final class CodeGenerateService {
         dmLayout.put("dataGrids", List.of(dataGrid1));
 
         // Generate the XML file
+        Map<String, GenerateFileResult> results = new LinkedHashMap<>();
         try {
             String outputSourceContentRootPath = "src/main/webapp/WEB-INF/etc/business/layout/" + folder;
             String outputSourceContentHtmlPath = "src/main/webapp/WEB-INF/view/MesRoot/" + folder;
@@ -380,37 +387,44 @@ public final class CodeGenerateService {
 
             Object outputFileName = dmLayout.get("layoutName");
             if (ProjectTypeChecker.isTraditionalJavaWebProject(project, module)){
-                // TODO isTraditionalJavaWebProject方法优化
+                // TODO isTraditionalJavaWebProject方法优化（P1-3 处理本分支 webapp 双写）
                 // 先尝试生成一遍SpringBoot项目目录架构的
                 if ((Boolean) paramsMap.get("layoutCheckBox")) {
-                    generateXmlFile(project, module, dmLayout, "BaseQueryTypeLayout.ftl", outputSourceContentRootPath, outputFileName + ".xml");
+                    results.put(outputFileName + ".xml", generateXmlFile(project, module, dmLayout, "BaseQueryTypeLayout.ftl", outputSourceContentRootPath, outputFileName + ".xml"));
                     outputSourceContentRootPath = "src/main/resources/META-INF/resources/WEB-INF/etc/business/layout/" + folder;
                 }
             }
             if ((Boolean) paramsMap.get("layoutCheckBox")) {
-                generateXmlFile(project, module, dmLayout, "BaseQueryTypeLayout.ftl", outputSourceContentRootPath, outputFileName + ".xml");
+                results.put(outputFileName + ".xml", generateXmlFile(project, module, dmLayout, "BaseQueryTypeLayout.ftl", outputSourceContentRootPath, outputFileName + ".xml"));
             }
             if ((Boolean) paramsMap.get("htmlCheckBox")) {
-                generateXmlFile(project, module, dmLayout, "BaseQueryTypeHtml.ftl", outputSourceContentHtmlPath, outputFileName + ".html");
+                results.put(outputFileName + ".html", generateXmlFile(project, module, dmLayout, "BaseQueryTypeHtml.ftl", outputSourceContentHtmlPath, outputFileName + ".html"));
             }
             if ((Boolean) paramsMap.get("controllerCheckBox")) {
-                generateXmlFile(project, module, dmLayout, "BaseQueryTypeController.ftl", outputSourceContentControllerPath, outputFileName + "Controller.java");
+                results.put(outputFileName + "Controller.java", generateXmlFile(project, module, dmLayout, "BaseQueryTypeController.ftl", outputSourceContentControllerPath, outputFileName + "Controller.java"));
             }
             if ((Boolean) paramsMap.get("serviceCheckBox")) {
-                generateXmlFile(project, module, dmLayout, "BaseQueryTypeService.ftl", outputSourceContentServicePath, outputFileName + "Service.java");
+                results.put(outputFileName + "Service.java", generateXmlFile(project, module, dmLayout, "BaseQueryTypeService.ftl", outputSourceContentServicePath, outputFileName + "Service.java"));
             }
             if ((Boolean) paramsMap.get("daoCheckBox")) {
-                generateXmlFile(project, module, dmLayout, "BaseQueryTypeDao.ftl", outputSourceContentDaoPath, "I" + outputFileName + "Dao.java");
+                results.put("I" + outputFileName + "Dao.java", generateXmlFile(project, module, dmLayout, "BaseQueryTypeDao.ftl", outputSourceContentDaoPath, "I" + outputFileName + "Dao.java"));
             }
             if ((Boolean) paramsMap.get("myBatisMapperCheckBox")) {
-                generateXmlFile(project, module, dmLayout, "BaseQueryTypeMapper.ftl", outputSourceContentMapperPath, outputFileName + "Mapper.xml");
+                results.put(outputFileName + "Mapper.xml", generateXmlFile(project, module, dmLayout, "BaseQueryTypeMapper.ftl", outputSourceContentMapperPath, outputFileName + "Mapper.xml"));
             }
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
+        } finally {
+            notifyGenerateSummary(results);
         }
     }
 
-    private void generateXmlFile(Project project, Module module, Map<String, Object> dataModel, String templateName, String outputSourceContentRootPath, String outputFileName) throws IOException {
+    // P1-1：单件产物生成结果，供调用方收集后一次汇总通知（不再降级写入模块根目录）
+    enum GenerateFileResult {
+        SUCCESS, SKIP_FILE_EXISTS, FAIL_DIR_NOT_FOUND
+    }
+
+    private GenerateFileResult generateXmlFile(Project project, Module module, Map<String, Object> dataModel, String templateName, String outputSourceContentRootPath, String outputFileName) throws IOException {
         Configuration cfg = FreeMarkerConfiguration.getConfiguration();
         Template template = cfg.getTemplate(templateName);
 
@@ -421,25 +435,16 @@ public final class CodeGenerateService {
         }
 
         // Build the output file path
-        VirtualFile outputDirVariable = contentRoot.findFileByRelativePath(outputSourceContentRootPath);
-        if (outputDirVariable == null) {
-//            outputDir = contentRoot.createChildDirectory(this, "src/main/webapp/WEB-INF/etc/business/layout/Basic");
-            Messages.showErrorDialog("未找到目录。已放到根目录：" + contentRoot.getPresentableUrl(), "操作失败");
-            outputDirVariable = contentRoot;
-//            return;
+        VirtualFile outputDir = contentRoot.findFileByRelativePath(outputSourceContentRootPath);
+        if (outputDir == null) {
+            return GenerateFileResult.FAIL_DIR_NOT_FOUND;
         }
 
-
-        // Create the output file
-        final VirtualFile outputFile = outputDirVariable.findChild(outputFileName);
-
-        if (outputFile != null) {
-            Messages.showErrorDialog("文件已存在：" + outputFile.getPresentableUrl() + "。已放到根目录：" + contentRoot.getPresentableUrl(), "操作失败");
-            outputDirVariable = contentRoot;
-//            return;
+        // 已存在的产物直接跳过（不再降级写到模块根目录）
+        if (outputDir.findChild(outputFileName) != null) {
+            return GenerateFileResult.SKIP_FILE_EXISTS;
         }
 
-        VirtualFile outputDir = outputDirVariable;
         WriteCommandAction.runWriteCommandAction(project, () -> {
             try {
                 VirtualFile virtualFile = outputDir.createChildData(this, outputFileName);
@@ -462,26 +467,57 @@ public final class CodeGenerateService {
                     throw new RuntimeException(e);
                 }
 
-                ApplicationManager.getApplication().invokeLater(() -> {
-
-                    LocalFileSystem.getInstance().refreshAndFindFileByIoFile(VfsUtilCore.virtualToIoFile(virtualFile));
-                    // VcsNotifier.getInstance(project).notifySuccess("CodeGenerator", "代码生成成功", "SVN 检测到新文件： " + virtualFile.getName());
-                    NotificationGroupManager.getInstance()
-                            .getNotificationGroup("ZhiyinOneClickNavigation")
-                            .createNotification(
-                                    "代码生成成功：SVN 检测到新文件：" + virtualFile.getName(),
-                                    NotificationType.INFORMATION
-                            )
-                            .setTitle("CodeGenerator")
-                            .notify(project);
-                    LocalFileSystem.getInstance().refresh(true);
-                });
+                ApplicationManager.getApplication().invokeLater(() ->
+                        LocalFileSystem.getInstance().refreshAndFindFileByIoFile(VfsUtilCore.virtualToIoFile(virtualFile)));
 
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         });
 
+        return GenerateFileResult.SUCCESS;
+    }
+
+    // P1-1：生成结束后一次汇总通知（成功/已存在跳过/目录不存在跳过），替代原先的逐文件弹窗与成功通知
+    private void notifyGenerateSummary(Map<String, GenerateFileResult> results) {
+        if (results.isEmpty()) {
+            return;
+        }
+        List<String> successFiles = new ArrayList<>();
+        List<String> existsFiles = new ArrayList<>();
+        List<String> noDirFiles = new ArrayList<>();
+        results.forEach((fileName, result) -> {
+            switch (result) {
+                case SUCCESS:
+                    successFiles.add(fileName);
+                    break;
+                case SKIP_FILE_EXISTS:
+                    existsFiles.add(fileName);
+                    break;
+                case FAIL_DIR_NOT_FOUND:
+                default:
+                    noDirFiles.add(fileName);
+                    break;
+            }
+        });
+        StringBuilder message = new StringBuilder("<html>代码生成完成。");
+        message.append("成功 ").append(successFiles.size()).append(" 个文件");
+        if (!successFiles.isEmpty()) {
+            message.append("：").append(String.join("、", successFiles));
+        }
+        if (!existsFiles.isEmpty()) {
+            message.append("；已存在跳过 ").append(existsFiles.size()).append(" 个：").append(String.join("、", existsFiles));
+        }
+        if (!noDirFiles.isEmpty()) {
+            message.append("；目录不存在跳过 ").append(noDirFiles.size()).append(" 个：").append(String.join("、", noDirFiles));
+        }
+        message.append("</html>");
+        boolean hasSkip = !existsFiles.isEmpty() || !noDirFiles.isEmpty();
+        NotificationGroupManager.getInstance()
+                .getNotificationGroup("ZhiyinOneClickNavigation")
+                .createNotification(message.toString(), hasSkip ? NotificationType.WARNING : NotificationType.INFORMATION)
+                .setTitle("CodeGenerator")
+                .notify(project);
     }
 
     private VirtualFile findModuleContentRoot(Module module) {
@@ -489,7 +525,8 @@ public final class CodeGenerateService {
         return contentRoots.length > 0 ? contentRoots[0] : null;
     }
 
-    private String formatSql(String sql) {
+    // P0-2：由 private 提为包级静态，供 TableParser/CodeGenerateService 快照单测调用（无实例状态，纯函数）
+    static String formatSql(String sql) {
         // 1. 检查输入是否为空，如果为空则直接返回空字符串
         if (isEmptyOrSpaces(sql)) {
             return "";

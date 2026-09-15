@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"     "classpath://mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhiyin.dao.order.IBaseFactoryDao">
+
+    <select id="queryBaseFactoryList" parameterType="Map" resultType="Map">
+		SELECT a.id,
+		a.code,
+		a.name,
+		a.maintainer,
+		a.maintaintime,
+		a.address,
+		a.country,
+		a.province,
+		a.industry,
+		a.contact,
+		a.contactphone,
+		a.longitude,
+		a.latitude,
+		a.note,
+		a.delflag,
+		a.defaultlang,
+		a.creator,
+		a.createtime,
+		a.scode,
+		a.3rdflag,
+		a.version,
+		a.datagettype,
+		a.status,
+		a.city,
+		a.expiredate,
+		a.industrysize,
+		a.purchaseperiod,
+		a.filename,
+		a.aliasname,
+		a.effectdate
+		FROM biz_base_factory a
+        <where>
+            <if test="id != null and id != ''">
+                and a.id = #{id}
+            </if>
+            <if test="code != null and code != ''">
+                and a.code like concat('%',#{code}, '%')
+            </if>
+            <if test="name != null and name != ''">
+                and a.name like concat('%',#{name}, '%')
+            </if>
+            <if test="maintainer != null and maintainer != ''">
+                and a.maintainer like concat('%',#{maintainer}, '%')
+            </if>
+            <if test="maintaintimefrom != null and maintaintimefrom != ''">
+                and a.maintaintime >= concat(#{maintaintimefrom}, ' 00:00:00')
+            </if>
+            <if test="maintaintimeto != null and maintaintimeto != ''">
+                and a.maintaintime <![CDATA[ <= ]]> concat(#{maintaintimeto}, ' 23:59:59')
+            </if>
+            <if test="address != null and address != ''">
+                and a.address like concat('%',#{address}, '%')
+            </if>
+            <if test="country != null and country != ''">
+                and a.country like concat('%',#{country}, '%')
+            </if>
+            <if test="province != null and province != ''">
+                and a.province like concat('%',#{province}, '%')
+            </if>
+            <if test="industry != null and industry != ''">
+                and a.industry like concat('%',#{industry}, '%')
+            </if>
+            <if test="contact != null and contact != ''">
+                and a.contact like concat('%',#{contact}, '%')
+            </if>
+            <if test="contactphone != null and contactphone != ''">
+                and a.contactphone like concat('%',#{contactphone}, '%')
+            </if>
+            <if test="longitude != null and longitude != ''">
+                and a.longitude like concat('%',#{longitude}, '%')
+            </if>
+            <if test="latitude != null and latitude != ''">
+                and a.latitude like concat('%',#{latitude}, '%')
+            </if>
+            <if test="note != null and note != ''">
+                and a.note like concat('%',#{note}, '%')
+            </if>
+            <if test="delflag != null and delflag != ''">
+                and a.delflag like concat('%',#{delflag}, '%')
+            </if>
+            <if test="defaultlang != null and defaultlang != ''">
+                and a.defaultlang like concat('%',#{defaultlang}, '%')
+            </if>
+            <if test="creator != null and creator != ''">
+                and a.creator like concat('%',#{creator}, '%')
+            </if>
+            <if test="createtimefrom != null and createtimefrom != ''">
+                and a.createtime >= concat(#{createtimefrom}, ' 00:00:00')
+            </if>
+            <if test="createtimeto != null and createtimeto != ''">
+                and a.createtime <![CDATA[ <= ]]> concat(#{createtimeto}, ' 23:59:59')
+            </if>
+            <if test="scode != null and scode != ''">
+                and a.scode like concat('%',#{scode}, '%')
+            </if>
+            <if test="3rdflag != null and 3rdflag != ''">
+                and a.3rdflag like concat('%',#{3rdflag}, '%')
+            </if>
+            <if test="version != null and version != ''">
+                and a.version like concat('%',#{version}, '%')
+            </if>
+            <if test="datagettype != null and datagettype != ''">
+                and a.datagettype like concat('%',#{datagettype}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                and a.status = #{status}
+            </if>
+            <if test="city != null and city != ''">
+                and a.city like concat('%',#{city}, '%')
+            </if>
+            <if test="expiredatefrom != null and expiredatefrom != ''">
+                and a.expiredate >= concat(#{expiredatefrom}, ' 00:00:00')
+            </if>
+            <if test="expiredateto != null and expiredateto != ''">
+                and a.expiredate <![CDATA[ <= ]]> concat(#{expiredateto}, ' 23:59:59')
+            </if>
+            <if test="industrysize != null and industrysize != ''">
+                and a.industrysize like concat('%',#{industrysize}, '%')
+            </if>
+            <if test="purchaseperiod != null and purchaseperiod != ''">
+                and a.purchaseperiod like concat('%',#{purchaseperiod}, '%')
+            </if>
+            <if test="filename != null and filename != ''">
+                and a.filename like concat('%',#{filename}, '%')
+            </if>
+            <if test="aliasname != null and aliasname != ''">
+                and a.aliasname like concat('%',#{aliasname}, '%')
+            </if>
+            <if test="effectdatefrom != null and effectdatefrom != ''">
+                and a.effectdate >= concat(#{effectdatefrom}, ' 00:00:00')
+            </if>
+            <if test="effectdateto != null and effectdateto != ''">
+                and a.effectdate <![CDATA[ <= ]]> concat(#{effectdateto}, ' 23:59:59')
+            </if>
+        </where>
+    </select>
+
+    <update id="importBaseFactory" parameterType="Map">
+    </update>
+
+    <update id="deleteBaseFactory" parameterType="Map">
+        delete a
+        from biz_base_factory a
+        where a.factoryid = #{factoryid}
+        <choose>
+            <when test="id != null and id != ''">
+                and a.id = #{id}
+            </when>
+            <when test="idlist != null and idlist.size() > 0">
+                and a.id in
+                <foreach collection="idlist" item="item" open="(" close=")" separator=",">
+                    #{item}
+                </foreach>
+            </when>
+            <otherwise>
+                and 1 = 0  <!-- 避免删除全表的保护条件 -->
+            </otherwise>
+        </choose>
+    </update>
+</mapper>

@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ViewDefine>
+    <DataGrid id="BaseFactoryGrid">
+        <Columns>
+            <Column name="dummy" type="int">
+                <Field value="ck"/>
+                <Title value=" " chs=" " eng=" "/>
+                <Align value="left"/>
+                <CheckBox value="true"/>
+            </Column>
+
+            <Column name="id" type="int" condition="{usertype} == '1'">
+                <Field value="id"/>
+                <Title value="" chs="" eng="id"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="true"/>
+            </Column>
+            <Column name="code" type="string">
+                <Field value="code"/>
+                <Title value="工厂编号" chs="工厂编号" eng="code"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="name" type="string">
+                <Field value="name"/>
+                <Title value="工厂名称" chs="工厂名称" eng="name"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="maintainer" type="string">
+                <Field value="maintainer"/>
+                <Title value="地址" chs="地址" eng="maintainer"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="maintaintime" type="datetime">
+                <Field value="maintaintime"/>
+                <Title value="" chs="" eng="maintaintime"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="address" type="string">
+                <Field value="address"/>
+                <Title value="" chs="" eng="address"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="country" type="string">
+                <Field value="country"/>
+                <Title value="国家" chs="国家" eng="country"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="province" type="string">
+                <Field value="province"/>
+                <Title value="省" chs="省" eng="province"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="industry" type="string">
+                <Field value="industry"/>
+                <Title value="行业类别" chs="行业类别" eng="industry"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="contact" type="string">
+                <Field value="contact"/>
+                <Title value="联系人" chs="联系人" eng="contact"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="contactphone" type="string">
+                <Field value="contactphone"/>
+                <Title value="联系手机" chs="联系手机" eng="contactphone"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="longitude" type="string">
+                <Field value="longitude"/>
+                <Title value="经度" chs="经度" eng="longitude"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="latitude" type="string">
+                <Field value="latitude"/>
+                <Title value="纬度" chs="纬度" eng="latitude"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="note" type="string">
+                <Field value="note"/>
+                <Title value="com.zhiyin.mes.app.order.ordergrid.note" chs="备注" eng="Note"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="delflag" type="int">
+                <Field value="delflag"/>
+                <Title value="第三方推送工厂" chs="第三方推送工厂" eng="delflag"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="true"/>
+            </Column>
+            <Column name="defaultlang" type="string">
+                <Field value="defaultlang"/>
+                <Title value="" chs="" eng="defaultlang"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="creator" type="string">
+                <Field value="creator"/>
+                <Title value="" chs="" eng="creator"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="createtime" type="datetime">
+                <Field value="createtime"/>
+                <Title value="" chs="" eng="createtime"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="scode" type="string">
+                <Field value="scode"/>
+                <Title value="" chs="" eng="scode"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="3rdflag" type="string">
+                <Field value="3rdflag"/>
+                <Title value="" chs="" eng="3rdflag"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="version" type="string">
+                <Field value="version"/>
+                <Title value="数据采集方式 DataGetType" chs="数据采集方式 DataGetType" eng="version"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="datagettype" type="string">
+                <Field value="datagettype"/>
+                <Title value="" chs="" eng="datagettype"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="status" type="string">
+                <Field value="status"/>
+                <Title value="城市" chs="城市" eng="status"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="true"/>
+            </Column>
+            <Column name="statusdsp" type="string">
+                <Field value="statusdsp"/>
+                <Title value="status" chs="城市" eng="status"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="city" type="string">
+                <Field value="city"/>
+                <Title value="" chs="" eng="city"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="expiredate" type="date">
+                <Field value="expiredate"/>
+                <Title value="失效日期" chs="失效日期" eng="expiredate"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="industrysize" type="string">
+                <Field value="industrysize"/>
+                <Title value="行业规模" chs="行业规模" eng="industrysize"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="purchaseperiod" type="int">
+                <Field value="purchaseperiod"/>
+                <Title value="购买年限" chs="购买年限" eng="purchaseperiod"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="filename" type="string">
+                <Field value="filename"/>
+                <Title value="logo" chs="logo" eng="filename"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="aliasname" type="string">
+                <Field value="aliasname"/>
+                <Title value="生产中心别名" chs="生产中心别名" eng="aliasname"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+            <Column name="effectdate" type="date">
+                <Field value="effectdate"/>
+                <Title value="生效日期" chs="生效日期" eng="effectdate"/>
+                <Align value="left"/>
+                <Width value="150"/>
+                <Hidden value="false"/>
+            </Column>
+        </Columns>
+
+        <Query>
+            <Field id="FactoryId" ref="FactoryId" condition="{usertype} == '1'" easyuiClass="easyui-combobox">
+                <Combobox>
+                    <ComboxUrl value="../Basic/Factory/getFactoryViewList"/>
+                    <ComboxValueField value="id"/>
+                    <ComboxTextField value="name"/>
+                </Combobox>
+            </Field>
+            <Field id="code" name="code" ref="code"/>
+            <Field id="name" name="name" ref="name"/>
+            <Field id="scode" name="scode" ref="scode"/>
+            <Field id="filename" name="filename" ref="filename"/>
+            <Field id="aliasname" name="aliasname" ref="aliasname"/>
+        </Query>
+    </DataGrid>
+</ViewDefine>

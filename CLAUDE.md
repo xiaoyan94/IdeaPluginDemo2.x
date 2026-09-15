@@ -19,6 +19,11 @@
 - **热路径禁止 `System.out.println`**（daemon 每元素触发，同步 I/O 拖慢扫描），用 `Logger` 或删除。
 - foldingBuilder 的 `buildFoldRegions(root, document, quick)` 需尊重 `quick` 语义，避免 editor 刚打开时做重计算。
 
+## DataModelGenerator（代码生成器）改造
+
+- 改造计划见 `docs/codegen-refactor-plan.md`：按文档中**第一个未勾选项**推进，每项独立走「开发 → 编译 → 测试 → 发版 → 提交 → 勾选」循环；发版后更新计划内进度看板。涉生成器的改动优先对齐该计划，别游离在计划外。
+- **检查点协议**：每项「勾选 + 看板更新（含未提交变更清单）」完成后即干净检查点，主动提示用户可 /compact 或 /clear（Claude 无法自行执行 /compact）；计划文件 + CLAUDE.md 是唯一断点载体，新会话说「继续 codegen 计划」即可续作。
+
 ## 代码风格
 
 - 大量历史代码用 `System.out.println` 调试输出与注释掉的死代码（`HtmlFoldingManagerOld`、`MyHTMLFoldingBuilder` 等无引用类）——修改时保持周边风格即可，但**不要在热路径新增** println；删死代码前先 grep 确认无引用（含 plugin.xml）。
