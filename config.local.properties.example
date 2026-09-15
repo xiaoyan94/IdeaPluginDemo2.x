@@ -1,0 +1,7 @@
+# 复制本文件为 config.local.properties 并填入真实密钥（config.local.properties 已被 .gitignore 忽略）
+# 只需写密钥类 key，region/endpoint/url 等非敏感项沿用仓库占位文件里的值
+translator.microsoft.resourceKey=REPLACE_ME
+translator.youDao.appKey=REPLACE_ME
+translator.youDao.appSecret=REPLACE_ME
+translator.baidu.appId=REPLACE_ME
+translator.baidu.appSecret=REPLACE_ME
