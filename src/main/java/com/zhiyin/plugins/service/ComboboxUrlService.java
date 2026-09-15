@@ -1,6 +1,8 @@
 package com.zhiyin.plugins.service;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -18,8 +20,26 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service(Service.Level.PROJECT)
 public final class ComboboxUrlService {
 
+    /**
+     * 空结果的有效期：空集大概率是“扫描时机不对”的产物（项目刚打开、索引刚从 dumb mode 恢复、
+     * Gradle import 进行中模块根不全），不能永久负缓存锁死；过期后下次补全触发重扫自愈。
+     * 非空结果不参与过期（与旧行为一致，靠手动 Action 强制刷新）。
+     */
+    private static final long EMPTY_RESULT_TTL_MS = 10_000L;
+
     private final Project project;
-    private final Map<String, Map<String, Set<String>>> cache = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, CacheEntry>> cache = new ConcurrentHashMap<>();
+
+    /** 扫描结果 + 扫描时间；scannedAtMs 仅用于空结果的 TTL 判定 */
+    private static final class CacheEntry {
+        final Set<String> values;
+        final long scannedAtMs;
+
+        CacheEntry(Set<String> values, long scannedAtMs) {
+            this.values = values;
+            this.scannedAtMs = scannedAtMs;
+        }
+    }
 
     public ComboboxUrlService(Project project) {
         this.project = project;
@@ -28,23 +48,35 @@ public final class ComboboxUrlService {
     }
 
     public Set<String> getCachedResults(String tagName, String attr) {
-        Set<String> list = getCached(tagName, attr);
-        if (list == null) {
-            // 未命中才重扫；缓存的空集视为有效负缓存，避免补全热路径反复全项目扫描
+        CacheEntry entry = getCached(tagName, attr);
+        // 未命中、或空结果超过 TTL（可能来自不完整扫描）才重扫；
+        // 补全热路径最坏每 TTL 一次全项目扫描，避免旧行为“空集每次补全都重扫”的卡顿
+        if (entry == null || isExpiredEmpty(entry)) {
             searchAndCacheXmlTags(tagName, attr);
-            list = getCached(tagName, attr);
+            entry = getCached(tagName, attr);
         }
-        return new HashSet<>(list == null ? Collections.emptySet() : list);
+        return new HashSet<>(entry == null || entry.values == null ? Collections.emptySet() : entry.values);
     }
 
-    private Set<String> getCached(String tagName, String attr) {
-        Map<String, Set<String>> row = cache.get(tagName);
+    private static boolean isExpiredEmpty(CacheEntry entry) {
+        return entry.values.isEmpty()
+               && System.currentTimeMillis() - entry.scannedAtMs > EMPTY_RESULT_TTL_MS;
+    }
+
+    private CacheEntry getCached(String tagName, String attr) {
+        Map<String, CacheEntry> row = cache.get(tagName);
         return row == null ? null : row.get(attr);
     }
 
     public void searchAndCacheXmlTags(String tagName, String attr) {
-        Set<String> results = searchXmlTags(tagName, attr);
-        cache.computeIfAbsent(tagName, k -> new ConcurrentHashMap<>()).put(attr, results);
+        // dumb mode（项目打开/更新索引中）下 FileTypeIndex 返回不完整结果，扫到的空集一旦
+        // 入缓存会被当成有效负缓存锁死，补全从此一直为空——宁可不扫，等 smart 后由 getCachedResults 重试
+        if (DumbService.isDumb(project)) {
+            return;
+        }
+        Set<String> results = ReadAction.compute(() -> searchXmlTags(tagName, attr));
+        cache.computeIfAbsent(tagName, k -> new ConcurrentHashMap<>())
+             .put(attr, new CacheEntry(results, System.currentTimeMillis()));
     }
 
     private Set<String> searchXmlTags(String tagName, String attr) {

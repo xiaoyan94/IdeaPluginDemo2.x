@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [2.0.21] - 2026-09-15
+
+fix: 修复 ComboboxUrlService 负缓存导致补全缓存为空且无法刷新的回归
+
+- 空结果缓存增加 10s TTL：项目打开期扫描时机不对扫到的空集不再被永久负缓存锁死，过期后下次补全自动重扫自愈
+- dumb mode（索引更新中）下跳过扫描且不入缓存，杜绝不完整扫描结果被当成有效缓存
+- 扫描统一包 ReadAction，手动 Action 触发的重扫路径同样线程安全
+
 ## [2.0.20] - 2026-09-14
 
 build: 移除冗余依赖并支持本地密钥注入
@@ -223,7 +231,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.20...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.21...HEAD
+[2.0.21]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.20...v2.0.21
 [2.0.20]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.19...v2.0.20
 [2.0.19]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.18...v2.0.19
 [2.0.18]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.17...v2.0.18
