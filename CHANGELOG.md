@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [2.0.30] - 2026-09-16
+
+fix: 连接选择对话框密码打码与路径可辨识（codegen 改造 P1-5），双击行即选中
+
+- 密码列固定显示 `******`，明文不再进入表格模型；选中逻辑由「文件名+url+用户名+密码四元组反查」改为按选中行直取（convertRowIndexToModel 转换后从连接列表取，消除脆弱匹配）
+- 第一列由裸文件名改显示项目相对路径（DatabaseConnectionFinder 新增 filePath 键，VfsUtilCore.getRelativePath 相对 project base dir，项目外文件回退全路径；fileName 键保持原值不动——MyProjectService 字典生成按 `app-dev.properties` 精确匹配消费）：显示层自动去除本批最长公共目录前缀并把 `src/main/resources`、`src/main/webapp` 折叠为 `…`，悬停 Path 列 tooltip 显示完整路径——多模块多环境同名 properties（如各模块 application-dev.properties）靠模块段+环境可区分
+- 表格模型 isCellEditable 恒 false（展示型表格禁编辑，双击不再进入单元格编辑态）+ 双击行即等价 Select（与 Select 按钮共用 confirmSelection，点列头/表体外不触发）
+- Path 列 320 preferred 宽、URL 列限宽（max 380）防挤压
+- runIde 验证（DengqiMes）：弹窗全程无明文密码、同名 properties 路径可区分、双击选中、选中连接读取链路回归通过；全量单测 22 例零回归
+- 附带发现（存量问题，不属本项范围）：IDE 退出时 HtmlFoldingManager 报 ROOT_DISPOSABLE 未 dispose 内存泄漏告警，与本次改动无关
+
 ## [2.0.29] - 2026-09-16
 
 feat: 代码生成器 Excel 导入/导出链路可选化（codegen 改造 P1-4），默认不再产出坏链 import 方法
@@ -293,7 +304,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.29...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.30...HEAD
+[2.0.30]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.29...v2.0.30
 [2.0.29]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.28...v2.0.29
 [2.0.28]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.27...v2.0.28
 [2.0.27]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.26...v2.0.27

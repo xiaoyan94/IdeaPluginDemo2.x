@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0 与 P1-1、P1-2、P1-3、P1-4、P1-7 已完成；P1-4 随 2.0.29 发版提交（2026-09-16）。下一项 P1-5（预留号顺延：P1-5→2.0.30、P1-6→2.0.31）；P1-8 证据已齐、可插队（DengqiMes dev 三个 properties 的临时 sslMode=DISABLED 待还原后再测）；P1-9 独立可并行（P1-4 执行记录已补非确定性新线索：同窗重复解析时序）
-- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-7
-- **未提交变更清单**（发版提交后清空）：本轮 P1-4 源码（2 Java + 5 模板）+ 新测试与 golden 资源 + CHANGELOG + gradle.properties + 本计划勾选看板随 2.0.29 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
+- **当前进行到**：阶段 0 与 P1-1～P1-5、P1-7 已完成；P1-5 随 2.0.30 发版提交（2026-09-16）。下一项 P1-6（预留号顺延：P1-6→2.0.31）；P1-8 证据已齐、可插队（DengqiMes dev 三个 properties 的临时 sslMode=DISABLED 待还原后再测）；P1-9 独立可并行（P1-4 执行记录已补非确定性新线索：同窗重复解析时序）
+- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-5、P1-7
+- **未提交变更清单**（发版提交后清空）：本轮 P1-5 源码（2 Java）+ CHANGELOG + gradle.properties + 本计划勾选看板随 2.0.30 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -126,8 +126,9 @@
 - **测试**：runIde 验证，产物 diff 基线（默认选项组合下，除 import 块外应零变化）
 - **风险**：低（模板条件渲染）
 
-### P1-5 [预留 2.0.29] 连接选择对话框：密码打码 + 路径可辨识
-- [ ] 完成
+### P1-5 [预留 2.0.29→2.0.30] 连接选择对话框：密码打码 + 路径可辨识 ✅（2026-09-16，2.0.30）
+- [x] 完成
+- **执行记录**：验收 3 ✓ 首轮即过（选中连接读取链路回归正常）；验收 1/2 首轮未过、二轮修复后过——① Path 显示完整相对路径太长，DengqiMes 各行公共前缀 `springboot/app/...` 相同、差异段（模块名）在中尾部被列宽截断，区分度反降 → 显示层压缩：去除本批最长公共目录前缀 + `src/main/resources`（`src/main/webapp`）折叠为 `…` + Path 列悬停 tooltip 显示完整路径 + Path 列 320 宽/URL 列限宽，压缩后形如 `com.zhiyin.mes.app.dengqi.order/…/application-dev.properties` 可辨识；② 双击行进入单元格编辑而非选中 → DefaultTableModel 匿名子类 isCellEditable 恒 false（展示型表格），双击正常冒泡到确认逻辑。**关键约束**：`fileName` key 保持原值不动（MyProjectService.java:342 按 `app-dev.properties` 精确匹配消费），新增独立 `filePath` key 存相对路径（VfsUtilCore.getRelativePath，项目外回退全路径）。单测 22 例零回归。**附带发现（存量）**：IDE 退出时 HtmlFoldingManager 报 ROOT_DISPOSABLE 未 dispose 内存泄漏告警（与本次改动无关，疑与 2026-08 泄漏事故同类存量问题）。**教训**：runIde 沙箱重启前须杀残留 IDE 的 JBR 进程——TaskStop 只杀 gradle 管道，沙箱 IDE 进程存活会锁 prepareSandbox 文件导致下一轮构建 FAILED。
 - **现状证据**：SelectDatabaseConnectionDialog.java:22-32 密码列明文；:49-57 按文件名+url+用户名+密码四元组反查选中项（脆弱）；:54 只显示文件名，dev/prod 同名文件难区分
 - **改动点**：
   1. 密码列显示 `******`，选择逻辑改 `connectionInfoList.get(table.getSelectedRow())` 直取（转换视图行索引 convertRowIndexToModel），删四元组反查

@@ -6,6 +6,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.search.FileTypeIndex;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -52,6 +53,8 @@ public final class DatabaseConnectionFinder {
                 if (url != null && !url.isEmpty() && !username.isEmpty() && !password.isEmpty()) {
                     Map<String, String> connectionInfo = new HashMap<>();
                     connectionInfo.put("fileName", file.getName());
+                    String relativePath = VfsUtilCore.getRelativePath(file, project.getBaseDir());
+                    connectionInfo.put("filePath", relativePath != null ? relativePath : file.getPath());
                     connectionInfo.put("url", url);
                     connectionInfo.put("username", username.get(0).getValue());
                     connectionInfo.put("password", password.get(0).getValue());
