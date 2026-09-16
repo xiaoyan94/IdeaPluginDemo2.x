@@ -40,7 +40,7 @@ import java.util.regex.Pattern;
 /**
  * 选中表名（如 biz_erp_sale_order）右键 -> 连库查看表结构。
  * 连接信息复用 {@link DatabaseConnectionFinder}（项目 .properties 里的 database.url/username/password），
- * 查询全走 information_schema（只读），JDBC 在后台线程执行。
+ * 查询全走 information_schema（只读），连接发现与 JDBC 均在后台线程执行。
  * 上次使用的数据源按项目记忆，下次直达；结果弹窗内可切换数据源重查。
  */
 public class ShowTableStructureAction extends AnAction {
@@ -104,26 +104,42 @@ public class ShowTableStructureAction extends AnAction {
         String schemaHint = parsed[0];
         String table = parsed[1];
 
-        List<Map<String, String>> connections = new ArrayList<>();
-        try {
-            connections.addAll(project.getService(DatabaseConnectionFinder.class).findDatabaseConnections(project));
-        } catch (Exception ex) {
-            LOG.warn("扫描项目数据库配置失败", ex);
-            MyPluginMessages.showError("查看表结构", "扫描项目 .properties 数据库配置失败: " + ExceptionUtil.getMessage(ex), project);
-            return;
-        }
-        if (connections.isEmpty()) {
-            MyPluginMessages.showWarning("查看表结构",
-                    "未在项目 .properties 文件中找到 database.url / database.username / database.password 配置", project);
-            return;
-        }
-        QueryContext ctx = new QueryContext(project, editor, connections, schemaHint, table);
-        Map<String, String> remembered = rememberedConnection(project, connections);
-        if (remembered != null) {
-            queueQuery(ctx, remembered, null);
-        } else {
-            showConnectionChooser(ctx);
-        }
+        // P1-3 顺手修（来源 P1-7 附带发现）：连接发现（DatabaseConnectionFinder → 索引查询）移出 EDT，
+        // 后台预取（collectPropertiesFiles 内部走 runReadActionInSmartMode 分支），EDT 只做弹窗交互
+        new Task.Backgroundable(project, "查找数据库连接", true) {
+            private List<Map<String, String>> connections = new ArrayList<>();
+            private Exception failure;
+
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                try {
+                    connections.addAll(project.getService(DatabaseConnectionFinder.class).findDatabaseConnections(project));
+                } catch (Exception ex) {
+                    failure = ex;
+                }
+            }
+
+            @Override
+            public void onSuccess() { // Task.Backgroundable#onSuccess 在 EDT 执行
+                if (failure != null) {
+                    LOG.warn("扫描项目数据库配置失败", failure);
+                    MyPluginMessages.showError("查看表结构", "扫描项目 .properties 数据库配置失败: " + ExceptionUtil.getMessage(failure), project);
+                    return;
+                }
+                if (connections.isEmpty()) {
+                    MyPluginMessages.showWarning("查看表结构",
+                            "未在项目 .properties 文件中找到 database.url / database.username / database.password 配置", project);
+                    return;
+                }
+                QueryContext ctx = new QueryContext(project, editor, connections, schemaHint, table);
+                Map<String, String> remembered = rememberedConnection(project, connections);
+                if (remembered != null) {
+                    queueQuery(ctx, remembered, null);
+                } else {
+                    showConnectionChooser(ctx);
+                }
+            }
+        }.queue();
     }
 
     /**

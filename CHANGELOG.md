@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [2.0.28] - 2026-09-16
+
+fix: 传统 Java Web 项目 layout 生成双写修复（codegen 改造 P1-3），表结构查看连接发现移出 EDT
+
+- CodeGenerateService traditional 分支不再先写一遍 src/main/webapp 路径再无条件写第二次：传统 Java Web 项目（如 SplashMes，src/main/resources/META-INF/resources/WEB-INF 结构）勾 Layout 生成仅写 META-INF 路径一处，消除每次生成必然出现的「目录不存在」跳过噪音（原双写第一次必然落空）；SpringBoot webapp 项目（DengqiMes）路径逻辑零变化，基线回归 7 件路径一致、6 件字节级一致（Layout 差异系基线采集走 DDL 粘贴路径的已知缺陷，P1-9 专项处理）
+- ShowTableStructureAction 连接发现（DatabaseConnectionFinder → FileTypeIndex 索引查询）照 P1-7 ② 模式移入 Task.Backgroundable：EDT 只做弹窗交互，表结构查看不再触发 Slow operations 断言内部错误弹窗
+- 已知边界（记录，不在本项范围）：传统 Spring XML 项目数据库配置在 applicationContext.xml（非 properties 的 database.url/username/password 三键），连接发现与「从数据库读取」不支持此类项目，生成器走 DDL 粘贴路径不受影响
+
 ## [2.0.27] - 2026-09-16
 
 fix: 代码生成器数据库读取后台化（超时 + 错误可见 + 表名校验）并根治生成链路 EDT 慢操作断言（codegen 改造 P1-2 + P1-7）
@@ -273,7 +281,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.27...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.28...HEAD
+[2.0.28]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.27...v2.0.28
 [2.0.27]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.26...v2.0.27
 [2.0.26]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.25...v2.0.26
 [2.0.25]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.24...v2.0.25

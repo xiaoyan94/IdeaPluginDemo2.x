@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0 与 P1-1、P1-2、P1-7 已完成；P1-2/P1-7 随 2.0.27 发版提交（2026-09-16，2.0.26 被计划外修复占用顺延 +1）。下一项 P1-3（预留号顺延：P1-3→2.0.28、P1-4→2.0.29、P1-5→2.0.30、P1-6→2.0.31；P1-8 证据已齐、DengqiMes dev 尚有临时 sslMode=DISABLED 待其上线后还原，可插队做）
-- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-7
-- **未提交变更清单**（发版提交后清空）：P1-2/P1-7 全部源码 + 测试 + CHANGELOG + gradle.properties + 本计划勾选看板，随 2.0.27 发版一并提交。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
+- **当前进行到**：阶段 0 与 P1-1、P1-2、P1-3、P1-7 已完成；P1-3（含 ShowTableStructureAction 连接发现顺手修）随 2.0.28 发版提交（2026-09-16）。下一项 P1-4（预留号顺延：P1-4→2.0.29、P1-5→2.0.30、P1-6→2.0.31）；P1-8 证据已齐、可插队（DengqiMes dev 三个 properties 的临时 sslMode=DISABLED 待还原后再测）；P1-9 独立可并行
+- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-7
+- **未提交变更清单**（发版提交后清空）：本轮 P1-3 源码 + CHANGELOG + gradle.properties + 本计划勾选看板 + 上轮遗留（看板定夺落盘、CLAUDE.md「每小点实现循环委托子代理」条目）随 2.0.28 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -95,15 +95,19 @@
 - **测试**：runIde 验证 + 错误路径手测；单测覆盖表名校验正则
 - **风险**：中低；注意 Backgroundable 回调线程，更新 Swing 前确认在 EDT
 
-### P1-3 [预留 2.0.27] 传统 Java Web 项目 layout 双写修复
-- [ ] 完成
+### P1-3 [预留 2.0.27] 传统 Java Web 项目 layout 双写修复 ✅（2026-09-16，2.0.28——预留号被 P1-2/P1-7 顺延占用）
+- [x] 完成
+- **执行记录**：验收 1 ✓（SplashMes order 模块 DDL 粘贴 biz_base_factory 生成，layout 仅 1 个文件落 `src/main/resources/META-INF/resources/WEB-INF/etc/business/layout/Order/`，webapp「目录不存在」跳过噪音消失；唯一跳过为 html——传统项目页面 jsp 化，范围外、用户认可暂不支持）；验收 2 ✓（DengqiMes 基线回归 7 件路径一致、6 件字节级一致；Layout 差异与 P1-7 第二轮验收同形态——基线 DDL 粘贴采集 comment 错位，本次产物逐字段正确：地址→address、城市→city、第三方推送工厂→3rdflag，归 P1-9）；验收 3 ✓（表结构查看 DengqiMes 完整链路用户验证通过，零 Slow operations 断言弹窗；SplashMes 侧弹「未找到 database.* 配置」属已知边界非回归）。单测 17 例全过（含 DataModelGeneratorTest 6 例）。两项目生成物验证后已删除还原。**附带发现（已记 CHANGELOG 已知边界，暂不立专项）**：传统 Spring XML 项目数据库配置在 applicationContext.xml（splash.app.web 的 applicationContext.xml:49）而非 properties database.* 三键，连接发现与「从数据库读取」不支持此类项目，生成器走 DDL 粘贴路径不受影响——若后续要支持需扩展 DatabaseConnectionFinder 扫 XML。
 - **现状证据**：CodeGenerateService.java:382-392 —— isTraditionalJavaWebProject 分支先写 `src/main/webapp/...`（traditional 项目通常无此目录，触发 P1-1 所修的降级垃圾），再把路径变量改为 META-INF 路径，:390 又无条件写第二次 → 两个文件
-- **改动点**：traditional 分支只保留 `src/main/resources/META-INF/resources/WEB-INF/...` 一处输出，删除第一次 webapp 写入；DengqiMes（SpringBoot+webapp）路径逻辑不动
+- **改动点**：
+  1. traditional 分支只保留 `src/main/resources/META-INF/resources/WEB-INF/...` 一处输出，删除第一次 webapp 写入；DengqiMes（SpringBoot+webapp）路径逻辑不动
+  2. 顺手修（2026-09-16 定夺并入，来源 P1-7 执行记录附带发现①）：ShowTableStructureAction.java:109 的 EDT 连接发现（表结构查看功能，非生成链路）照 P1-7 ② 模式移入 `Task.Backgroundable` 后台预取、onSuccess 消费
 - **验收标准**：
   - traditional 项目（SplashMes）勾 Layout 生成：仅 1 个文件且落在 META-INF 路径
   - DengqiMes 回归：产物路径与基线完全一致
-- **测试**：需真实验证（SplashMes + DengqiMes 各一次）
-- **风险**：低
+  - 表结构查看（ShowTableStructureAction）全程零 Slow operations 断言弹窗
+- **测试**：需真实验证（SplashMes + DengqiMes 各一次）+ runIde 表结构查看一次
+- **风险**：低（主改动与顺手修不同文件，互不影响）
 
 ### P1-4 [预留 2.0.28] import 链路改为可选且默认关闭，删空 SQL 语句
 - [ ] 完成
@@ -153,7 +157,7 @@
 
 ### P1-7 [预留顺延] 生成链路 EDT 慢操作断言修复（i18n 反查索引查询）✅（2026-09-16，2.0.27 与 P1-2 同版）
 - [x] 完成
-- **执行记录**：两处索引查询移出 EDT——① i18n 反查批量化（新增 `MyPropertiesUtil.findModuleDataGridI18nPropertiesByValueBatch`，EDT 走 runReadAction / 后台走 runReadActionInSmartMode 双分支，逐值调用原方法命中语义不变）；② **连接发现**（DatabaseConnectionFinder）从 `fetchFieldsFromDatabase` 的 invokeLater 移入 Task.Backgroundable 预取、onSuccess 弹窗——②是第一轮验收实测漏网项（19 组 SlowOperations 断言全来自 DataModelGenerator.java:252 连接发现，i18n 反查本身零断言）。第二轮验收 ✓：全链路（从数据库读取 + 一键生成）Slow operations 断言 0。基线 diff 6/7 字节级一致；Layout 差异定性为**基线自身采集缺陷**（走「DDL 粘贴」路径 comment 归属错位：maintainer←地址等；DB 直读产物逐字段正确，`备注`→ordergrid.note 命中两轮复现，i18n 语义不变）。`grep allowSlowOperations src/` 仅剩 FeignClientRelatedItemLineMarkerProvider:42 活跃调用。**附带发现（待处理）**：ShowTableStructureAction.java:109 同模式 EDT 连接发现（表结构查看，非生成链路）；「DDL 粘贴」comment 归属错位疑似 TableParser/UI 层缺陷，建议专项核查后再决定是否立 P 项。
+- **执行记录**：两处索引查询移出 EDT——① i18n 反查批量化（新增 `MyPropertiesUtil.findModuleDataGridI18nPropertiesByValueBatch`，EDT 走 runReadAction / 后台走 runReadActionInSmartMode 双分支，逐值调用原方法命中语义不变）；② **连接发现**（DatabaseConnectionFinder）从 `fetchFieldsFromDatabase` 的 invokeLater 移入 Task.Backgroundable 预取、onSuccess 弹窗——②是第一轮验收实测漏网项（19 组 SlowOperations 断言全来自 DataModelGenerator.java:252 连接发现，i18n 反查本身零断言）。第二轮验收 ✓：全链路（从数据库读取 + 一键生成）Slow operations 断言 0。基线 diff 6/7 字节级一致；Layout 差异定性为**基线自身采集缺陷**（走「DDL 粘贴」路径 comment 归属错位：maintainer←地址等；DB 直读产物逐字段正确，`备注`→ordergrid.note 命中两轮复现，i18n 语义不变）。`grep allowSlowOperations src/` 仅剩 FeignClientRelatedItemLineMarkerProvider:42 活跃调用。**附带发现（已定夺 2026-09-16）**：① ShowTableStructureAction.java:109 同模式 EDT 连接发现（表结构查看，非生成链路）→ 并入 P1-3 顺手修；② 「DDL 粘贴」comment 归属错位疑似 TableParser/UI 层缺陷 → 立 P1-9 专项核查。
 - **现状证据**（2026-09-15 P0-1 基线采集时实际撞出，用户报内部错误弹窗，堆栈已核）：`DataModelGenerator.generateDataModel`（:543，一键生成按钮 EDT 链路）→ `CodeGenerateService.generateBaseQueryTypeFile:312` → `MyPropertiesUtil.findModuleDataGridI18nPropertiesByValue:475-476` 在 EDT 上跑 `FilenameIndex.getVirtualFilesByName` + `FileTypeIndex.getFiles`（`runReadActionInSmartMode` 内），触发 `SlowOperations.assertSlowOperationsAreAllowed` 断言——IU-2024.3.5 沙箱实测弹「Slow operations are prohibited on EDT」内部错误；:474 的 `SlowOperations.allowSlowOperations` 包装被注释掉。断言只记录不中断，产物正常，但每次生成都弹内部错误，且索引查询阻塞 EDT。
 - **改动点**：
   1. i18n 反查移出 EDT：生成前在后台预查所有字段的 i18n 命中结果（`Task.Backgroundable`，参照 P1-2 模式），EDT 只消费结果；或至少恢复 `SlowOperations.allowSlowOperations` 包装消掉断言弹窗（治标，二选一以前者为佳，可与 P1-2 的后台化一起做）
@@ -173,6 +177,18 @@
 - **测试**：runIde 验证（先还原 DengqiMes 临时配置再测）
 - **风险**：低
 - **决策记录**：2026-09-16 用户确认走代码侧回退（非仅配置侧）；过渡期已在 DengqiMes dev 三个 properties（iot application-dev / config app-dev / txmanage application-dev）本地追加 sslMode=DISABLED，本项上线后可还原
+
+### P1-9 [预留顺延]「DDL 粘贴」comment 归属错位专项核查（TableParser/UI 层）
+- [ ] 完成
+- **现状证据**（2026-09-16 P1-7 第二轮验收发现，来源 P1-7 执行记录附带发现②）：P0-1 基线经「DDL 粘贴」路径采集，产物中 comment 归属错位（`maintainer` 拿到地址类注释等）；同表走「从数据库读取」路径逐字段正确（`备注`→ordergrid.note 两轮复现）→ 缺陷在 DDL 粘贴解析链路（TableParser.parseCreateTable 或 UI 字段表填充层），非模板生成层
+- **改动点**：
+  1. 先核查定位：用 `docs/codegen-baseline/input/` 存档 DDL 走粘贴路径，比对 TableParser 解析出的字段↔comment 映射与 DB 直读结果，锁定错位环节（解析层 or UI 填充层），结论带 file:line 证据落回本节
+  2. 依核查结论补修复：解析层缺陷 → 修 `parseCreateTable` 并把错位 case 补进 P0-2 单测护栏；UI 填充缺陷 → 修填充顺序
+  3. 修复后同表双路径（粘贴 vs DB 直读）diff 验证一致，并重采基线 Layout（现基线 Layout 含错位数据，P1-7 已定性为基线自身采集缺陷）
+- **验收标准**：核查结论落本节（含证据）；若修复：同表两路径产物 comment 映射一致 + 单测覆盖错位 case + 基线 Layout 重采归位
+- **测试**：TableParser 单测 + runIde 双路径同表 diff
+- **风险**：低（核查先行；生成主链路不受影响——DB 直读路径已正确）
+- **关联**：P0-1（基线）、P0-2（单测护栏）、P1-7（发现来源）
 
 ---
 
@@ -379,6 +395,7 @@
               ├──→ P1-4 ──→ P1-6（模板条件结构先行）──→ P2-6（导入链路）
 阶段0 ──→ P2-1(GATE-B 已确认) ──→ P2-2 ──→ P2-4（i18n 前缀进配置）
 P2-3 / P2-5 独立，可与 P1 并行
+P1-8 / P1-9 独立（P1-9 核查型，结论反哺 P0-2 单测与基线重采）
 阶段3 各项独立（P3-5 依赖 P1-1+P3-3）
 阶段4 串行：P4-1 → P4-2 → P4-3 / P4-4
 ```
@@ -388,7 +405,7 @@ P2-3 / P2-5 独立，可与 P1 并行
 | 阶段 | 循环数 | 预估 |
 |------|--------|------|
 | 0 | 并入首个发版 | 0.5-1 天 |
-| 1 | 7 | 5-7 天 |
+| 1 | 8 | 6-8 天 |
 | 2 | 6 | 5-8 天 |
 | 3 | 6 | 4-6 天 |
 | 4 | 4 | 6-10 天 |

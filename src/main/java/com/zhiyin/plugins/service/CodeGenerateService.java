@@ -395,13 +395,9 @@ public final class CodeGenerateService {
             String outputSourceContentMapperPath = "src/main/java/com/zhiyin/maps/" + folderLowerCase + "/";
 
             Object outputFileName = dmLayout.get("layoutName");
-            if (ProjectTypeChecker.isTraditionalJavaWebProject(project, module)){
-                // TODO isTraditionalJavaWebProject方法优化（P1-3 处理本分支 webapp 双写）
-                // 先尝试生成一遍SpringBoot项目目录架构的
-                if ((Boolean) paramsMap.get("layoutCheckBox")) {
-                    results.put(outputFileName + ".xml", generateXmlFile(project, module, dmLayout, "BaseQueryTypeLayout.ftl", outputSourceContentRootPath, outputFileName + ".xml"));
-                    outputSourceContentRootPath = "src/main/resources/META-INF/resources/WEB-INF/etc/business/layout/" + folder;
-                }
+            // P1-3：传统 Java Web 项目 layout 只写 META-INF 路径一处（原先先写 webapp 触发目录不存在跳过噪音，再无条件写第二次）
+            if (ProjectTypeChecker.isTraditionalJavaWebProject(project, module) && (Boolean) paramsMap.get("layoutCheckBox")) {
+                outputSourceContentRootPath = "src/main/resources/META-INF/resources/WEB-INF/etc/business/layout/" + folder;
             }
             if ((Boolean) paramsMap.get("layoutCheckBox")) {
                 results.put(outputFileName + ".xml", generateXmlFile(project, module, dmLayout, "BaseQueryTypeLayout.ftl", outputSourceContentRootPath, outputFileName + ".xml"));
