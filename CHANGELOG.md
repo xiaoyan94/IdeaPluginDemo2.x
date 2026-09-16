@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [2.0.29] - 2026-09-16
+
+feat: 代码生成器 Excel 导入/导出链路可选化（codegen 改造 P1-4），默认不再产出坏链 import 方法
+
+- 生成器复选框区新增「Excel 导出」（默认勾，产物与既有行为一致）与「Excel 导入（需另行配置 Imp mapper）」（默认不勾）：导入链依赖未生成的 Imp mapper 列定义才能工作且 dao 调用被注释、Mapper 侧生成空 update 语句（运行时静默 no-op），此前生成即坏且无任何提示，现默认不生成
+- Controller/Service/Dao/Html 四模板用 `<#if generateImport>` 包住 import 方法及其专属 import 语句/@Resource 注入（SysLogger/FileInputStream/HashMap、ExcelImportService/BizCommonService 等，逐符号核实归属，共享符号保持无条件）；Html 的 Import()/DownloadTemplate()/导入对话框（DivImport/DivError）与 Export() JS 属同一链路，一并条件包裹（`<#if>` 置于 `<#noparse>` 外）——计划原文列 4 模板，Html 为同链路补全
+- Mapper 模板空 `<update id="import...">` 节点无条件删除（勾不勾导入都不再产出空语句）
+- 勾选导入时 Service import 方法首行生成 `// TODO: 需配置 Imp mapper 列定义后方可启用`
+- paramsMap 传 generateImport/generateExport，缺省口径 export=true / import=false（与复选框初始态一致，兼容旧调用方）
+- 新增 BaseQueryTypeTemplateGoldenTest 5 用例：双开渲染与 golden 快照（src/test/resources/codegen-golden/）字节级一致（锁条件包裹零漂移）、不勾导入/导出产物零痕迹、缺省口径纯逻辑断言；全量单测 22 例通过
+- runIde 三轮验证（DengqiMes order 模块 biz_base_factory）：默认组合与基线 diff 仅 import 块移除；勾导入后 Controller/Dao/Html/Moc 与基线字节级一致、Service 仅多 TODO 行、Mapper 仅少空 update；不勾导出 Controller/Html 零 export 痕迹
+
 ## [2.0.28] - 2026-09-16
 
 fix: 传统 Java Web 项目 layout 生成双写修复（codegen 改造 P1-3），表结构查看连接发现移出 EDT
@@ -281,7 +293,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.28...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.29...HEAD
+[2.0.29]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.28...v2.0.29
 [2.0.28]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.27...v2.0.28
 [2.0.27]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.26...v2.0.27
 [2.0.26]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.25...v2.0.26

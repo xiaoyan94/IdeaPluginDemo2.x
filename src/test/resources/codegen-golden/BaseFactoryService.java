@@ -1,69 +1,53 @@
-<#include "common.ftl">
-package com.zhiyin.service.${packageName};
+package com.zhiyin.service.order;
 
 // import com.zhiyin.aop.DataSetType;
-<#if generateImport>
 import com.zhiyin.dao.DaoResultBuilder;
-</#if>
-import com.zhiyin.dao.${packageName}.I${ObjectName}Dao;
-<#if generateImport>
+import com.zhiyin.dao.order.IBaseFactoryDao;
 import com.zhiyin.i18n.I18nUtil;
-</#if>
 import com.zhiyin.service.BaseService;
-<#if generateImport>
 import com.zhiyin.service.BizCommonService;
-</#if>
 import com.zhiyin.service.dict.DictTransformBuilder;
-<#if generateImport>
 import com.zhiyin.service.excel.DataImportParseResult;
 import com.zhiyin.service.excel.EasyExcelUtils;
 import com.zhiyin.service.excel.ExcelImportService;
 import com.zhiyin.service.excel.mapper.Mapper;
 import com.zhiyin.service.utils.CollectorsUtils;
-</#if>
 import com.zhiyin.utils.StringHelper;
-<#if generateImport>
 import com.zhiyin.utils.StringUtils;
-</#if>
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-<#if generateImport>
 import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
-</#if>
 import java.util.Map;
 
 @Service
-public class ${ObjectName}Service extends BaseService {
+public class BaseFactoryService extends BaseService {
 
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     @Resource
-    private I${ObjectName}Dao ${objectName}Dao;
-<#if generateImport>
+    private IBaseFactoryDao baseFactoryDao;
 
     @Resource
     private ExcelImportService excelImportService;
 
     @Resource
     private BizCommonService bizCommonService;
-</#if>
 
-    public Map query${ObjectName}List(Map<String, Object> params) throws Exception {
-        return queryDaoDataT(I${ObjectName}Dao.class, ${objectName}Dao, "query${ObjectName}List", params);
+    public Map queryBaseFactoryList(Map<String, Object> params) throws Exception {
+        return queryDaoDataT(IBaseFactoryDao.class, baseFactoryDao, "queryBaseFactoryList", params);
     }
-<#if generateImport>
 
-    public Map import${ObjectName}(FileInputStream fis, String clientIp, Map<String, Object> params) throws Exception {
+    public Map importBaseFactory(FileInputStream fis, String clientIp, Map<String, Object> params) throws Exception {
         // TODO: 需配置 Imp mapper 列定义后方可启用
         String userCode = StringUtils.getStringFromMap(params, "usercode");
         String factoryId = StringUtils.getStringFromMap(params, "factoryid");
         params.put("clientid", clientIp);
-        Mapper importMapper = excelImportService.getImportMapper(${ObjectName}Service.class, factoryId, "${ObjectName}");
+        Mapper importMapper = excelImportService.getImportMapper(BaseFactoryService.class, factoryId, "BaseFactory");
         DataImportParseResult dataResult = EasyExcelUtils.readBaseDataExcel(fis, importMapper, factoryId, clientIp);
 
         List<Map<String, Object>> filterList = new ArrayList<>();
@@ -103,8 +87,8 @@ public class ${ObjectName}Service extends BaseService {
         excelImportService.insertTempDataByExcel(dataResult);
 
         // 插入业务表
-        // ${objectName}Dao.import${ObjectName}(params);
-        bizCommonService.resetSeq("${tableName}");
+        // baseFactoryDao.importBaseFactory(params);
+        bizCommonService.resetSeq("biz_base_factory");
         Map retMap;
         if (!errorMessages.isEmpty()) {
             DaoResultBuilder resultBuilder = new DaoResultBuilder();
@@ -115,5 +99,4 @@ public class ${ObjectName}Service extends BaseService {
         }
         return retMap;
     }
-</#if>
 }

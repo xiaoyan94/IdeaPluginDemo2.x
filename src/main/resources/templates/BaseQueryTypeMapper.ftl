@@ -28,9 +28,6 @@ ${dataGrids[0].sql}
         </where>
     </select>
 
-    <update id="import${ObjectName}" parameterType="Map">
-    </update>
-
     <update id="delete${ObjectName}" parameterType="Map">
         delete a
         from ${dataGrids[0].tableName} a

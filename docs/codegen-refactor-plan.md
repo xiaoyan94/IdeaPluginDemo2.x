@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0 与 P1-1、P1-2、P1-3、P1-7 已完成；P1-3（含 ShowTableStructureAction 连接发现顺手修）随 2.0.28 发版提交（2026-09-16）。下一项 P1-4（预留号顺延：P1-4→2.0.29、P1-5→2.0.30、P1-6→2.0.31）；P1-8 证据已齐、可插队（DengqiMes dev 三个 properties 的临时 sslMode=DISABLED 待还原后再测）；P1-9 独立可并行
-- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-7
-- **未提交变更清单**（发版提交后清空）：本轮 P1-3 源码 + CHANGELOG + gradle.properties + 本计划勾选看板 + 上轮遗留（看板定夺落盘、CLAUDE.md「每小点实现循环委托子代理」条目）随 2.0.28 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
+- **当前进行到**：阶段 0 与 P1-1、P1-2、P1-3、P1-4、P1-7 已完成；P1-4 随 2.0.29 发版提交（2026-09-16）。下一项 P1-5（预留号顺延：P1-5→2.0.30、P1-6→2.0.31）；P1-8 证据已齐、可插队（DengqiMes dev 三个 properties 的临时 sslMode=DISABLED 待还原后再测）；P1-9 独立可并行（P1-4 执行记录已补非确定性新线索：同窗重复解析时序）
+- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-7
+- **未提交变更清单**（发版提交后清空）：本轮 P1-4 源码（2 Java + 5 模板）+ 新测试与 golden 资源 + CHANGELOG + gradle.properties + 本计划勾选看板随 2.0.29 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -109,8 +109,9 @@
 - **测试**：需真实验证（SplashMes + DengqiMes 各一次）+ runIde 表结构查看一次
 - **风险**：低（主改动与顺手修不同文件，互不影响）
 
-### P1-4 [预留 2.0.28] import 链路改为可选且默认关闭，删空 SQL 语句
-- [ ] 完成
+### P1-4 [预留 2.0.28] import 链路改为可选且默认关闭，删空 SQL 语句 ✅（2026-09-16，2.0.29——预留号 2.0.28 被 P1-3 顺延占用）
+- [x] 完成
+- **执行记录**：验收 1 ✓（默认组合不勾导入：Controller/Service/Dao/Html 与基线 diff 仅 import 链移除——专属 import/注入/方法/JS/导入对话框，export 完好）；验收 2 ✓（勾导入：Controller/Dao/Html/Moc 与基线**字节级一致**、Service 仅 +TODO 行（:46）、Mapper 仅 −空 update 块——条件包裹零漂移的最强实证）；验收 3 ✓（不勾导出：Controller/Html grep `exportBaseFactory|EasyExcelUtils|ExcelExportService|function Export` 计 0）。单测新增 BaseQueryTypeTemplateGoldenTest 5 用例（golden 双开渲染字节级 / 导入关零痕迹 / TODO 首行 / 导出关零痕迹 / paramsMap 缺省口径 export=true·import=false），golden 快照存 `src/test/resources/codegen-golden/`，全量 22 例过。**范围补全（对计划意图）**：Html 模板纳入条件包裹（计划原文列 4 模板，但 Import()/DownloadTemplate()/DivImport/DivError 对话框与 Controller import 端点同链路，不包则不勾导入时页面残留死 JS；`<#if>` 置于 `<#noparse>` 外，Export() 同法包 generateExport）。**附带发现（P1-9 重要线索）**：三轮 runIde 同走 DDL 粘贴、同输入 DDL，Layout comment 归属仅第 2 轮复现基线错位、第 1/3 轮产物逐字段正确 → **错位非确定成立**，疑与同窗重复解析/重复生成的状态残留相关，P1-9 核查须覆盖该时序（同窗二次解析 vs 首次解析）。三轮生成物均验证后 revert+删除，DengqiMes 工作副本干净（svn status 零输出）。
 - **现状证据**：BaseQueryTypeController.ftl:89-113 生成 import 接口 → BaseQueryTypeService.ftl 的 import 方法依赖 `excelImportService.getImportMapper(...)`（需要未生成的 Imp mapper 列定义配置才能工作）且 dao 调用被注释 → BaseQueryTypeMapper.ftl 生成**空的** `<update id="import...">`（运行时静默 no-op）→ BaseQueryTypeDao.ftl 声明 import 方法。整条链生成即坏，无任何提示
 - **改动点**：
   1. UI 复选框区（DataModelGenerator.createCheckBoxPanel:203）加「Excel 导入（需另行配置 Imp mapper）」默认**不勾**；「Excel 导出」默认勾（现有导出方法保留）

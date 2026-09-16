@@ -71,6 +71,8 @@ public class DataModelGenerator {
     private JCheckBox serviceCheckBox;
     private JCheckBox daoCheckBox;
     private JCheckBox myBatisMapperCheckBox;
+    private JCheckBox excelImportCheckBox;
+    private JCheckBox excelExportCheckBox;
     private JRadioButton dataMaintenanceRadioButton;
     private JRadioButton dataQueryRadioButton;
 
@@ -228,6 +230,9 @@ public class DataModelGenerator {
         serviceCheckBox = new JCheckBox("Service", true);
         daoCheckBox = new JCheckBox("Dao", true);
         myBatisMapperCheckBox = new JCheckBox("MyBatisMapper", true);
+        // P1-4：Excel 导入/导出链路可选——导出默认勾（产物与既有行为一致），导入默认不勾（需另行配置 Imp mapper 列定义）
+        excelImportCheckBox = new JCheckBox("Excel 导入（需另行配置 Imp mapper）", false);
+        excelExportCheckBox = new JCheckBox("Excel 导出", true);
 
         checkBoxPanel.add(mocCheckBox);
         checkBoxPanel.add(layoutCheckBox);
@@ -236,6 +241,8 @@ public class DataModelGenerator {
         checkBoxPanel.add(serviceCheckBox);
         checkBoxPanel.add(daoCheckBox);
         checkBoxPanel.add(myBatisMapperCheckBox);
+        checkBoxPanel.add(excelImportCheckBox);
+        checkBoxPanel.add(excelExportCheckBox);
         return checkBoxPanel;
     }
 
@@ -633,6 +640,8 @@ public class DataModelGenerator {
         paramsMap.put("serviceCheckBox", serviceCheckBox.isSelected());
         paramsMap.put("daoCheckBox", daoCheckBox.isSelected());
         paramsMap.put("myBatisMapperCheckBox", myBatisMapperCheckBox.isSelected());
+        paramsMap.put("generateImport", excelImportCheckBox.isSelected());
+        paramsMap.put("generateExport", excelExportCheckBox.isSelected());
         paramsMap.put("dataMaintenanceRadioButton", dataMaintenanceRadioButton.isSelected());
         paramsMap.put("dataQueryRadioButton", dataQueryRadioButton.isSelected());
 

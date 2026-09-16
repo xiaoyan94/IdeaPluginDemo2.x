@@ -379,6 +379,10 @@ public final class CodeGenerateService {
         String moduleName = MyPropertiesUtil.getSimpleModuleName(module);
         dmLayout.put("moduleName", StringUtil.capitalize(moduleName));
         dmLayout.put("dataGrids", List.of(dataGrid1));
+        // P1-4：Excel 导入/导出链路可选，标志放 dmLayout 根（模板 <#if generateImport/generateExport> 直取根变量）；
+        // paramsMap 缺 key 时按 UI 复选框默认兜底（导出勾、导入不勾），兼容旧调用方
+        dmLayout.put("generateImport", resolveGenerateImport(paramsMap));
+        dmLayout.put("generateExport", resolveGenerateExport(paramsMap));
 
         // Generate the XML file
         Map<String, GenerateFileResult> results = new LinkedHashMap<>();
@@ -528,6 +532,15 @@ public final class CodeGenerateService {
     private VirtualFile findModuleContentRoot(Module module) {
         VirtualFile[] contentRoots = ModuleRootManager.getInstance(module).getContentRoots();
         return contentRoots.length > 0 ? contentRoots[0] : null;
+    }
+
+    // P1-4：paramsMap 缺省口径（包级静态，供单测锁定）——导出缺省 true、导入缺省 false，与 DataModelGenerator 复选框初始态一致
+    static boolean resolveGenerateExport(Map<String, Object> paramsMap) {
+        return !Boolean.FALSE.equals(paramsMap.get("generateExport"));
+    }
+
+    static boolean resolveGenerateImport(Map<String, Object> paramsMap) {
+        return Boolean.TRUE.equals(paramsMap.get("generateImport"));
     }
 
     // P0-2：由 private 提为包级静态，供 TableParser/CodeGenerateService 快照单测调用（无实例状态，纯函数）

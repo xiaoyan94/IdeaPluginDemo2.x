@@ -1,20 +1,13 @@
-<#include "common.ftl">
-package com.zhiyin.controller<#if packageName?startsWith("basic")><#else>.mes</#if>.${packageName};
+package com.zhiyin.controller.mes.order;
 
 import com.alibaba.fastjson.JSONObject;
-<#if generateImport>
 import com.zhiyin.aspect.SysLogger;
-</#if>
 import com.zhiyin.controller.BaseController;
 import com.zhiyin.i18n.I18nUtil;
-<#if generateExport>
 import com.zhiyin.service.excel.EasyExcelUtils;
 import com.zhiyin.service.excel.ExcelExportService;
-</#if>
-import com.zhiyin.service.${packageName}.${ObjectName}Service;
-<#if generateExport>
+import com.zhiyin.service.order.BaseFactoryService;
 import com.zhiyin.utils.DateUtils;
-</#if>
 import com.zhiyin.utils.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,61 +20,50 @@ import org.springframework.web.servlet.ModelAndView;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-<#if generateImport>
 import java.io.FileInputStream;
-</#if>
-<#if generateExport>
 import java.util.Date;
-</#if>
-<#if generateImport>
 import java.util.HashMap;
-</#if>
-<#if generateExport>
 import java.util.List;
-</#if>
 import java.util.Map;
 
 /**
- * ${fileName} Controller
+ * BaseFactory Controller
  */
 @Controller
-@RequestMapping(value = "/${appName}")
-public class ${ObjectName}Controller extends BaseController {
+@RequestMapping(value = "/Order")
+public class BaseFactoryController extends BaseController {
 
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     @Resource
-    private ${ObjectName}Service ${objectName}Service;
-<#if generateExport>
+    private BaseFactoryService baseFactoryService;
 
     @Resource
     private ExcelExportService excelExportService;
-</#if>
 
-    @RequestMapping(value = "/${ObjectName}", method = {RequestMethod.POST, RequestMethod.GET})
-    public ModelAndView create${ObjectName}View(HttpServletRequest request) throws Exception {
+    @RequestMapping(value = "/BaseFactory", method = {RequestMethod.POST, RequestMethod.GET})
+    public ModelAndView createBaseFactoryView(HttpServletRequest request) throws Exception {
         Map parameterMap = getParameterMap(request);
-        return createMultiGridPatternView(parameterMap, this.getClass(), "MesRoot/${appName}/${ObjectName}", request.getServletPath());
+        return createMultiGridPatternView(parameterMap, this.getClass(), "MesRoot/Order/BaseFactory", request.getServletPath());
     }
 
-    @RequestMapping(value = "/${ObjectName}/query${ObjectName}List", method = {RequestMethod.POST, RequestMethod.GET}, produces = "application/json; charset=utf-8")
+    @RequestMapping(value = "/BaseFactory/queryBaseFactoryList", method = {RequestMethod.POST, RequestMethod.GET}, produces = "application/json; charset=utf-8")
     @ResponseBody
-    public String query${ObjectName}List(HttpServletRequest request) {
+    public String queryBaseFactoryList(HttpServletRequest request) {
         JSONObject json = new JSONObject();
         Map<String, Object> params = getParameterMap(request);
         try {
-            Map retMap = ${objectName}Service.query${ObjectName}List(params);
+            Map retMap = baseFactoryService.queryBaseFactoryList(params);
             return wrapperSuccess(retMap, json);
         } catch (Exception e) {
-            logger.error("${ObjectName}Controller::query${ObjectName}List catch exception:", e);
+            logger.error("BaseFactoryController::queryBaseFactoryList catch exception:", e);
             return wrapperException(params, e, json);
         }
     }
-<#if generateExport>
 
-    @RequestMapping(value = "/${ObjectName}/export${ObjectName}", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/json;charset=utf-8")
+    @RequestMapping(value = "/BaseFactory/exportBaseFactory", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/json;charset=utf-8")
     @ResponseBody
-    public String export${ObjectName}(HttpServletResponse response, HttpServletRequest request) {
+    public String exportBaseFactory(HttpServletResponse response, HttpServletRequest request) {
         JSONObject json = new JSONObject();
         Map<String, Object> params = getParameterMap(request);
         try {
@@ -89,26 +71,24 @@ public class ${ObjectName}Controller extends BaseController {
             Map<String, Object> paramap = JSONObject.parseObject(paraStr);
             params.putAll(paramap);
             String userCode = StringUtils.getStringFromMap(params, "usercode");
-            Map<String, Object> recordMap = ${objectName}Service.query${ObjectName}List(params);
+            Map<String, Object> recordMap = baseFactoryService.queryBaseFactoryList(params);
             Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
             List<Map> rows = (List<Map>) recordMap.get("rows");
-            String fileName = I18nUtil.getMessage(userCode, "${fileName}");
+            String fileName = I18nUtil.getMessage(userCode, "BaseFactory");
             EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), (String[]) columnMap.get("fieldtype"), rows, fileName, params);
             // 之前的写法
             // EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
         } catch (Exception e) {
-            logger.error("${ObjectName}Controller::export${ObjectName} catch exception:", e);
+            logger.error("BaseFactoryController::exportBaseFactory catch exception:", e);
             return wrapperException(params, e, json);
         }
         return null;
     }
-</#if>
-<#if generateImport>
 
-    @RequestMapping(value = "/${ObjectName}/import${ObjectName}", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/json;charset=utf-8")
+    @RequestMapping(value = "/BaseFactory/importBaseFactory", method = {RequestMethod.GET, RequestMethod.POST}, produces = "application/json;charset=utf-8")
     @ResponseBody
-    @SysLogger(OperationName = "import${ObjectName}", OperationDescription = "import${ObjectName}")
-    public String import${ObjectName}(HttpServletResponse response, HttpServletRequest request) {
+    @SysLogger(OperationName = "importBaseFactory", OperationDescription = "importBaseFactory")
+    public String importBaseFactory(HttpServletResponse response, HttpServletRequest request) {
         Map<String, Object> params = getParameterMap(request);
         JSONObject json = new JSONObject();
         try
@@ -118,17 +98,16 @@ public class ${ObjectName}Controller extends BaseController {
             Map<String, Object> retMap = new HashMap<>();
             String userCode = StringUtils.objToString(params.get("usercode"));
 //            //1.上传Excel文件到临时目录
-            FileInputStream inputStream = uploadFileToImportReIs(request,"TempDir/${appName}/");
+            FileInputStream inputStream = uploadFileToImportReIs(request,"TempDir/Order/");
             if (inputStream == null) {
                 retMap.put("error", I18nUtil.getMessage(userCode,"com.zhiyin.mes.app.web.uploadFile_isEmpty"));
                 return wrapperSuccess(retMap, json);
             }
-            retMap = ${objectName}Service.import${ObjectName}(inputStream,clientIp,params);
+            retMap = baseFactoryService.importBaseFactory(inputStream,clientIp,params);
             return wrapperSuccess(retMap, json);
         } catch (Exception e) {
-            logger.error("${ObjectName}Controller::import${ObjectName} catch exception:", e);
+            logger.error("BaseFactoryController::importBaseFactory catch exception:", e);
             return wrapperException(params, e, json);
         }
     }
-</#if>
 }

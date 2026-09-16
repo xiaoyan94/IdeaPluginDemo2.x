@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"     "classpath://mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhiyin.dao.order.IBaseFactoryDao">
+
+    <select id="queryBaseFactoryList" parameterType="Map" resultType="Map">
+select a.* from biz_base_factory a
+        <where>
+        </where>
+    </select>
+
+    <update id="deleteBaseFactory" parameterType="Map">
+        delete a
+        from biz_base_factory a
+        where a.factoryid = #{factoryid}
+        <choose>
+            <when test="id != null and id != ''">
+                and a.id = #{id}
+            </when>
+            <when test="idlist != null and idlist.size() > 0">
+                and a.id in
+                <foreach collection="idlist" item="item" open="(" close=")" separator=",">
+                    #{item}
+                </foreach>
+            </when>
+            <otherwise>
+                and 1 = 0  <!-- 避免删除全表的保护条件 -->
+            </otherwise>
+        </choose>
+    </update>
+</mapper>
