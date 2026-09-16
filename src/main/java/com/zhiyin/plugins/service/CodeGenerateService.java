@@ -279,7 +279,12 @@ public final class CodeGenerateService {
         }
     }
 
-    public void generateBaseQueryTypeFile(Module module, String folder, String modelName, String fileName, String sql, List<Map<String, Object>> fields, Map<String, Object> paramsMap) {
+    /**
+     * P1-7：i18nByComment 为后台预查好的「字段 comment → DataGrid i18n 命中」结果（见
+     * MyPropertiesUtil#findModuleDataGridI18nPropertiesByValueBatch 与 DataModelGenerator#generateDataModel），
+     * 本方法在 EDT 上被调用，不再直接做索引反查。
+     */
+    public void generateBaseQueryTypeFile(Module module, String folder, String modelName, String fileName, String sql, List<Map<String, Object>> fields, Map<String, Object> paramsMap, Map<String, List<Property>> i18nByComment) {
         if (project == null) {
             Messages.showErrorDialog("Project is not available", "Error");
             return;
@@ -313,9 +318,13 @@ public final class CodeGenerateService {
         dataGrid1.put("sql", formatSql(sql));
         dataGrid1.put("ckDummyColumn", "true");
         List<Map<String, Object>> columns = new ArrayList<>(fields);
+        Map<String, List<Property>> precomputedI18n = i18nByComment == null ? Collections.emptyMap() : i18nByComment;
         columns.forEach(field -> {
             field.put("chs", field.get("comment"));
-            List<Property> properties = MyPropertiesUtil.findModuleDataGridI18nPropertiesByValue(project, module, field.get("comment").toString());
+            Object commentObj = field.get("comment");
+            List<Property> properties = commentObj == null
+                    ? Collections.emptyList()
+                    : precomputedI18n.getOrDefault(commentObj.toString(), Collections.emptyList());
             if (!properties.isEmpty()) {
                 field.put("i18nKey", properties.get(0).getKey());
                 field.put("chs", properties.get(0).getValue());

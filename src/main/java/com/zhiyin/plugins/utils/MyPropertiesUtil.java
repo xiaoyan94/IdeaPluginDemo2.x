@@ -18,7 +18,6 @@ import com.intellij.psi.PsiManager;
 import com.intellij.psi.search.FileTypeIndex;
 import com.intellij.psi.search.FilenameIndex;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.util.SlowOperations;
 import com.intellij.util.containers.ContainerUtil;
 import com.zhiyin.plugins.i18n.I18nCacheManager;
 import com.zhiyin.plugins.resources.Constants;
@@ -435,8 +434,7 @@ public class MyPropertiesUtil {
 
         String moduleName = getSimpleModuleName(module);
 
-        // SlowOperations.allowSlowOperations(() -> {
-            DumbService.getInstance(project).runReadActionInSmartMode(() -> {
+        DumbService.getInstance(project).runReadActionInSmartMode(() -> {
                 List<VirtualFile> virtualFiles = new ArrayList<>(FilenameIndex.getVirtualFilesByName(Constants.I18N_WEB_ZH_CN,
                         GlobalSearchScope.moduleScope(module)));
                 List<IProperty> allProperties = getProperties(project, virtualFiles);
@@ -451,7 +449,6 @@ public class MyPropertiesUtil {
                     }
                 });
             });
-        // });
 
         return result;
     }
@@ -471,8 +468,7 @@ public class MyPropertiesUtil {
 
         String moduleName = getSimpleModuleName(module);
 
-        // SlowOperations.allowSlowOperations(() -> {
-            DumbService.getInstance(project).runReadActionInSmartMode(() -> {
+        DumbService.getInstance(project).runReadActionInSmartMode(() -> {
                 List<VirtualFile> virtualFiles = new ArrayList<>(FilenameIndex.getVirtualFilesByName(moduleName + Constants.I18N_DATAGRID_ZH_CN_SUFFIX,
                         GlobalSearchScope.moduleScope(module)));
 
@@ -507,8 +503,30 @@ public class MyPropertiesUtil {
                     }
                 });
             });
-        // });
 
+        return result;
+    }
+
+    /**
+     * 批量按值反查 DataGrid i18n（P1-7）：代码生成链路把逐字段反查搬到后台一次性预查，EDT 只消费结果，
+     * 避免在 EDT 上跑 FilenameIndex/FileTypeIndex 触发 SlowOperations 断言。
+     * 单值查询语义与 {@link #findModuleDataGridI18nPropertiesByValue} 完全一致（逐值独立调用）。
+     */
+    public static Map<String, List<Property>> findModuleDataGridI18nPropertiesByValueBatch(
+            Project project, Module module, Collection<String> values) {
+        Map<String, List<Property>> result = new LinkedHashMap<>();
+        // 索引/PSI 查询线程口径照 DatabaseConnectionFinder#collectPropertiesFiles：
+        // EDT 保持 read action（不阻塞等 smart mode），后台线程在 smart mode 下执行
+        Runnable collector = () -> {
+            for (String value : values) {
+                result.put(value, findModuleDataGridI18nPropertiesByValue(project, module, value));
+            }
+        };
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ApplicationManager.getApplication().runReadAction(collector);
+        } else {
+            DumbService.getInstance(project).runReadActionInSmartMode(collector);
+        }
         return result;
     }
 

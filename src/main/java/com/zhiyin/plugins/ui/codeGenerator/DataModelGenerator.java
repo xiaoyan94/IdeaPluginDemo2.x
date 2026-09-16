@@ -2,9 +2,14 @@ package com.zhiyin.plugins.ui.codeGenerator;
 
 //import com.intellij.ui.table.JBTable;
 
+import com.intellij.lang.properties.psi.Property;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.InputValidatorEx;
 import com.intellij.openapi.ui.Messages;
@@ -13,6 +18,7 @@ import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
+import com.intellij.util.ExceptionUtil;
 import com.zhiyin.plugins.notification.MyPluginMessages;
 import com.zhiyin.plugins.resources.MyIcons;
 import com.zhiyin.plugins.service.CodeGenerateService;
@@ -28,14 +34,24 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
 
 //@Service(Service.Level.PROJECT)
 public class DataModelGenerator {
+    private static final Logger LOG = Logger.getInstance(DataModelGenerator.class);
+
+    /** 表名安全字符集：SHOW CREATE TABLE 为字符串拼接，表名只允许字母/数字/下划线/点号（P1-2） */
+    static final Pattern DB_TABLE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.]+$");
+
     private final JFrame frame;
     private final JTable table;
     private final DefaultTableModel tableModel;
@@ -224,56 +240,137 @@ public class DataModelGenerator {
     }
 
     private void fetchFieldsFromDatabase() {
-        // 实现查询数据库字段的逻辑
-        ApplicationManager.getApplication().invokeLater(() -> {
-            JFrame frame = new JFrame(); // Dummy frame to center dialog
-//            @NotNull Project[] openProjects = ProjectManager.getInstance().getOpenProjects();
+        // P1-2：选连接 + 输表名留在 EDT；JDBC 查询（纯网络调用，不碰 PSI/VFS）放后台任务，
+        // 失败经 onError 弹窗可见，不再被 println 吞掉、不再冻结 EDT
+        // P1-7：连接发现（DatabaseConnectionFinder → FileTypeIndex/PSI）同为索引查询，一并移出 EDT——
+        // 后台预取连接清单（collectPropertiesFiles 内部走 runReadActionInSmartMode 分支），EDT 只做弹窗交互
+        new Task.Backgroundable(project, "查找数据库连接", false) {
+            private List<Map<String, String>> connections = Collections.emptyList();
 
-            List<Map<String, String>> connections = new ArrayList<>();
-            DatabaseConnectionFinder connectionFinder = this.project.getService(DatabaseConnectionFinder.class);
-            if (connectionFinder != null) {
-                connections.addAll(connectionFinder.findDatabaseConnections(project));
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                DatabaseConnectionFinder connectionFinder = project.getService(DatabaseConnectionFinder.class);
+                if (connectionFinder != null) {
+                    connections = connectionFinder.findDatabaseConnections(project);
+                }
             }
-            SelectDatabaseConnectionDialog dialog = new SelectDatabaseConnectionDialog(frame, connections);
-            dialog.setVisible(true);
+
+            @Override
+            public void onSuccess() {
+                // Task.Backgroundable#onSuccess 在 EDT 执行
+                JFrame frame = new JFrame(); // Dummy frame to center dialog
+                SelectDatabaseConnectionDialog dialog = new SelectDatabaseConnectionDialog(frame, connections);
+                dialog.setVisible(true);
 
             // Get the selected connection info after the dialog is closed
             Map<String, String> selectedConnectionInfo = dialog.getSelectedConnectionInfo();
 
-            if (selectedConnectionInfo != null) {
-
-                String tableName = Messages.showInputDialog("请输入表名", "操作提示", Messages.getQuestionIcon());
-                this.tableName = tableName;
-
-                String jdbcUrl = selectedConnectionInfo.get("url");
-                String username = selectedConnectionInfo.get("username");
-                String password = selectedConnectionInfo.get("password");
-
-                // Call the method to get table metadata
-                List<Map<String, Object>> tableMetadata = DatabaseMetadataUtil.getTableMetadata(jdbcUrl, username, password, tableName);
-
-                // Update fields with new data
-                fields.clear();
-                fields.addAll(tableMetadata);
-
-                StringBuilder sqlBuilder = new StringBuilder("select ");
-                for (int i = 0; i < fields.size(); i++) {
-                    sqlBuilder.append("a.")
-                              .append(fields.get(i).get("name"))
-                              .append(",");
-                }
-                sqlBuilder.deleteCharAt(sqlBuilder.length() - 1);
-                sqlBuilder.append(" \nfrom ")
-                          .append(tableName)
-                          .append(" a");
-                this.sql = sqlBuilder.toString();
-
-                // Optionally, update your UI component with the new fields data
-                updateTableModel();
+            if (selectedConnectionInfo == null) {
+                return;
             }
-        });
+
+            String inputTableName = Messages.showInputDialog("请输入表名", "操作提示", Messages.getQuestionIcon());
+            String validationError = validateDbTableName(inputTableName);
+            if (validationError != null) {
+                // 输入无效（含取消）：不动 this.tableName / this.sql / fields，避免「from null a」式状态污染
+                MyPluginMessages.showWarning("操作失败", validationError, project);
+                return;
+            }
+            String tableName = inputTableName.trim();
+            DataModelGenerator.this.tableName = tableName;
+
+            String jdbcUrl = selectedConnectionInfo.get("url");
+            String username = selectedConnectionInfo.get("username");
+            String password = selectedConnectionInfo.get("password");
+
+            new Task.Backgroundable(project, "从数据库读取表字段: " + tableName, false) {
+                private List<Map<String, Object>> tableMetadata;
+
+                @Override
+                public void run(@NotNull ProgressIndicator indicator) {
+                    try {
+                        tableMetadata = DatabaseMetadataUtil.getTableMetadata(jdbcUrl, username, password, tableName);
+                    } catch (Exception ex) {
+                        LOG.warn("从数据库读取表字段失败: " + tableName + ", url=" + jdbcUrl, ex);
+                        throw new RuntimeException(ex);
+                    }
+                }
+
+                @Override
+                public void onSuccess() {
+                    // Task.Backgroundable#onSuccess 在 EDT 执行
+                    fields.clear();
+                    fields.addAll(tableMetadata);
+
+                    StringBuilder sqlBuilder = new StringBuilder("select ");
+                    for (int i = 0; i < fields.size(); i++) {
+                        sqlBuilder.append("a.")
+                                  .append(fields.get(i).get("name"))
+                                  .append(",");
+                    }
+                    sqlBuilder.deleteCharAt(sqlBuilder.length() - 1);
+                    sqlBuilder.append(" \nfrom ")
+                              .append(tableName)
+                              .append(" a");
+                    sql = sqlBuilder.toString();
+
+                    updateTableModel();
+                }
+
+                @Override
+                public void onError(@NotNull Exception error) {
+                    // onError 在 EDT 执行；错误原因脱敏（不含用户名/密码，host 可保留）
+                    Throwable root = ExceptionUtil.getRootCause(error);
+                    MyPluginMessages.showError("数据库读取失败",
+                            "连接 " + describeDbHost(jdbcUrl) + " 读取表 " + tableName + " 失败："
+                                    + sanitizeDbErrorMessage(root.getMessage()),
+                            project);
+                }
+            }.queue();
+            }
+        }.queue();
 
 //        updateTableModel();
+    }
+
+    /**
+     * 表名输入校验（P1-2）：null/空提示中止；SHOW CREATE TABLE 是字符串拼接，表名必须匹配安全字符集。
+     *
+     * @return null 表示合法；否则返回可直接展示给用户的错误原因
+     */
+    static String validateDbTableName(String tableName) {
+        if (tableName == null || tableName.trim().isEmpty()) {
+            return "表名不能为空";
+        }
+        if (!DB_TABLE_NAME_PATTERN.matcher(tableName.trim()).matches()) {
+            return "表名只能包含字母、数字、下划线和点号（输入: " + tableName.trim() + "）";
+        }
+        return null;
+    }
+
+    /** 错误信息脱敏：屏蔽 MySQL 报错里的 user 'xxx'@ 部分（不含用户名/密码） */
+    static String sanitizeDbErrorMessage(String message) {
+        if (message == null || message.isEmpty()) {
+            return "未知错误（详见 idea.log）";
+        }
+        return message.replaceAll("(?i)user '[^']*'@", "user '***'@");
+    }
+
+    /** 从 JDBC URL 提取 host:port 供错误提示展示；剔除可能内嵌的 user:pass@ 凭据 */
+    static String describeDbHost(String jdbcUrl) {
+        if (jdbcUrl == null || jdbcUrl.isEmpty()) {
+            return "未知数据源";
+        }
+        Matcher matcher = Pattern.compile("//([^/?]+)").matcher(jdbcUrl);
+        if (!matcher.find()) {
+            return "未知数据源";
+        }
+        String authority = matcher.group(1);
+        int at = authority.lastIndexOf('@');
+        if (at >= 0) {
+            authority = "***@" + authority.substring(at + 1);
+        }
+        return authority;
     }
 
     private void fetchFieldsFromTableSQL() {
@@ -539,13 +636,46 @@ public class DataModelGenerator {
         paramsMap.put("dataMaintenanceRadioButton", dataMaintenanceRadioButton.isSelected());
         paramsMap.put("dataQueryRadioButton", dataQueryRadioButton.isSelected());
 
-        if (dataQueryRadioButton.isSelected()) {
-            service.generateBaseQueryTypeFile(this.module, folder, modelName, fileName, this.sql, this.fields, paramsMap);
-        }
+        // P1-7：i18n 反查（FilenameIndex/FileTypeIndex）不在 EDT 执行——后台一次性预查所有字段
+        // comment 的命中结果，EDT 只消费；命中语义与逐字段现查完全一致
+        new Task.Backgroundable(project, "分析字段 i18n", false) {
+            private Map<String, List<Property>> i18nByComment = Collections.emptyMap();
 
-        if (mocCheckBox.isSelected()) {
-            service.generateMocFile(this.module, folder, modelName, this.tableName, this.fields);
-        }
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                if (!dataQueryRadioButton.isSelected()) {
+                    return;
+                }
+                Set<String> comments = new LinkedHashSet<>();
+                for (Map<String, Object> field : fields) {
+                    Object comment = field.get("comment");
+                    if (comment != null) {
+                        comments.add(comment.toString());
+                    }
+                }
+                i18nByComment = MyPropertiesUtil.findModuleDataGridI18nPropertiesByValueBatch(project, module, comments);
+            }
+
+            @Override
+            public void onSuccess() {
+                // Task.Backgroundable#onSuccess 在 EDT 执行：只消费预查结果，不再触发索引查询
+                if (dataQueryRadioButton.isSelected()) {
+                    service.generateBaseQueryTypeFile(module, folder, modelName, fileName, sql, fields, paramsMap, i18nByComment);
+                }
+
+                if (mocCheckBox.isSelected()) {
+                    service.generateMocFile(module, folder, modelName, tableName, fields);
+                }
+            }
+
+            @Override
+            public void onError(@NotNull Exception error) {
+                // 预查失败则中止生成，避免以空 i18n 结果静默降级产物
+                LOG.warn("i18n 预查失败，中止生成", error);
+                MyPluginMessages.showError("无法生成", "字段 i18n 预查失败，已中止本次生成："
+                        + ExceptionUtil.getMessage(error), project);
+            }
+        }.queue();
 
         // 关闭窗口
 //        frame.dispose();

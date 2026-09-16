@@ -1,44 +1,45 @@
 package com.zhiyin.plugins.utils;
 
+import com.intellij.openapi.diagnostic.Logger;
+
 import java.sql.*;
 import java.util.*;
 
 public class DatabaseMetadataUtil {
 
-    // Method to get table metadata information
-    public static List<Map<String, Object>> getTableMetadata(
-            String jdbcUrl, String username, String password, String tableName) {
-        List<Map<String, Object>> tableMetadata = new ArrayList<>();
-        Connection connection = null;
+    private static final Logger LOG = Logger.getInstance(DatabaseMetadataUtil.class);
 
+    /** 连接超时（毫秒）：错误库地址 3 秒内失败，不再无限挂起（P1-2） */
+    private static final String CONNECT_TIMEOUT_MS = "3000";
+    /** Socket 读超时（毫秒）：防 SHOW CREATE TABLE 查询无限等待（P1-2） */
+    private static final String SOCKET_TIMEOUT_MS = "10000";
+
+    // Method to get table metadata information
+    // P1-2：错误不再吞掉——受检异常上抛给调用方（后台任务 onError 弹窗），日志记录完整堆栈
+    public static List<Map<String, Object>> getTableMetadata(
+            String jdbcUrl, String username, String password, String tableName) throws SQLException {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
-
-            // Establish a connection to the database
-            connection = DriverManager.getConnection(jdbcUrl, username, password);
-
-            String createTableSQL = getCreateTableSQL(connection, tableName);
-
-            tableMetadata = TableParser.parseCreateTable(createTableSQL);
-
-        } catch (SQLException e) {
-            System.out.println("Error retrieving table metadata: " + e.getMessage());
-//            e.printStackTrace();
         } catch (ClassNotFoundException e) {
-            System.out.println("Error loading JDBC driver: " + e.getMessage());
-        } finally {
-            // Close the connection
-            if (connection != null) {
-                try {
-                    connection.close();
-                } catch (SQLException e) {
-                    System.out.println("Error closing connection: " + e.getMessage());
-//                    e.printStackTrace();
-                }
-            }
+            LOG.error("MySQL JDBC 驱动加载失败", e);
+            throw new SQLException("MySQL JDBC 驱动加载失败: " + e.getMessage(), e);
         }
-
-        return tableMetadata;
+        Properties props = new Properties();
+        if (username != null) {
+            props.setProperty("user", username);
+        }
+        if (password != null) {
+            props.setProperty("password", password);
+        }
+        props.setProperty("connectTimeout", CONNECT_TIMEOUT_MS);
+        props.setProperty("socketTimeout", SOCKET_TIMEOUT_MS);
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, props)) {
+            String createTableSQL = getCreateTableSQL(connection, tableName);
+            return TableParser.parseCreateTable(createTableSQL);
+        } catch (SQLException e) {
+            LOG.warn("读取表元数据失败: table=" + tableName + ", url=" + jdbcUrl, e);
+            throw e;
+        }
     }
 
     // Method to execute SHOW CREATE TABLE and return the SQL statement
@@ -82,7 +83,8 @@ public class DatabaseMetadataUtil {
     }
 
     // getAllDatabaseConnectionsMetaData, params connection info by DatabaseConnectionFinder class
-    public static List<Map<String, Object>> getAllDatabaseConnectionsMetaData(List<Map<String, String>> databaseConnections, String tableName) {
+    public static List<Map<String, Object>> getAllDatabaseConnectionsMetaData(List<Map<String, String>> databaseConnections,
+                                                                              String tableName) throws SQLException {
         List<Map<String, Object>> tableMetadata = new ArrayList<>();
         for (Map<String, String> connectionInfo : databaseConnections) {
             String jdbcUrl = connectionInfo.get("url");
@@ -95,6 +97,7 @@ public class DatabaseMetadataUtil {
     }
 
     // 新增：获取非指定前缀的所有表字段元数据
+    // 供 MyProjectService（后台任务）调用，保持原签名：失败记日志返回已收集结果
     public static Map<String, List<Map<String, Object>>> getTablesMetadataByNotStartPrefix(
             String jdbcUrl, String username, String password, String prefix) {
 
@@ -102,9 +105,19 @@ public class DatabaseMetadataUtil {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
         } catch (ClassNotFoundException e) {
-            System.err.println("Error loading JDBC driver: " + e.getMessage());
+            LOG.error("MySQL JDBC 驱动加载失败", e);
+            return result;
         }
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
+        Properties props = new Properties();
+        if (username != null) {
+            props.setProperty("user", username);
+        }
+        if (password != null) {
+            props.setProperty("password", password);
+        }
+        props.setProperty("connectTimeout", CONNECT_TIMEOUT_MS);
+        props.setProperty("socketTimeout", SOCKET_TIMEOUT_MS);
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, props)) {
 
             // 1. 获取前缀匹配的表名列表
             List<String> tableNames = getTablesByPrefix(connection, prefix);
@@ -115,7 +128,7 @@ public class DatabaseMetadataUtil {
                 result.put(tableName, metadata);
             }
         } catch (SQLException e) {
-            System.out.println("Error: " + e.getMessage());
+            LOG.warn("按前缀读取表元数据失败: url=" + jdbcUrl, e);
         }
         return result;
     }
@@ -178,7 +191,7 @@ public class DatabaseMetadataUtil {
             String createTableSQL = getCreateTableSQL(connection, tableName);
             return TableParser.parseCreateTable(createTableSQL);
         } catch (SQLException e) {
-            System.out.println("Error retrieving metadata for " + tableName + ": " + e.getMessage());
+            LOG.warn("读取表元数据失败: table=" + tableName, e);
             return Collections.emptyList();
         }
     }
@@ -193,7 +206,7 @@ public class DatabaseMetadataUtil {
         List<Map<String, Object>> metadata = getTableMetadata(jdbcUrl, username, password, tableName);
 
         for (Map<String, Object> column : metadata) {
-            System.out.println("Column Info: " + column);
+            LOG.info("Column Info: " + column);
         }*/
 
         String prefix = "act_";  // 表名前缀
@@ -202,8 +215,8 @@ public class DatabaseMetadataUtil {
 
         // 打印结果
         result.forEach((tableName, columns) -> {
-            System.out.println("Table: " + tableName);
-            columns.forEach(col -> System.out.println("  Column: " + col.get("name") + " | Type: " + col.get("type")));
+            LOG.info("Table: " + tableName);
+            columns.forEach(col -> LOG.info("  Column: " + col.get("name") + " | Type: " + col.get("type")));
         });
 
     }

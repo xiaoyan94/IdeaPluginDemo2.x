@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0 已全部完成（2026-09-15），下一项 P1-1（随 2.0.25 发版携带阶段 0 产物）
-- **已完成**：P0-1、P0-2、P0-3
-- **未提交变更清单**（发版提交后清空）：CLAUDE.md（P0-3 链接）、docs/codegen-refactor-plan.md、docs/codegen-baseline/**（基线 7 件 + input DDL + README）、src/test/kotlin/com/zhiyin/plugins/utils/TableParserTest.kt（新增）、src/test/kotlin/com/zhiyin/plugins/service/CodeGenerateServiceFormatSqlTest.kt（新增）、CodeGenerateService.java（formatSql 提为包级静态）。注意：.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 为本机杂项，不随发版提交。
+- **当前进行到**：阶段 0 与 P1-1、P1-2、P1-7 已完成；P1-2/P1-7 随 2.0.27 发版提交（2026-09-16，2.0.26 被计划外修复占用顺延 +1）。下一项 P1-3（预留号顺延：P1-3→2.0.28、P1-4→2.0.29、P1-5→2.0.30、P1-6→2.0.31；P1-8 证据已齐、DengqiMes dev 尚有临时 sslMode=DISABLED 待其上线后还原，可插队做）
+- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-7
+- **未提交变更清单**（发版提交后清空）：P1-2/P1-7 全部源码 + 测试 + CHANGELOG + gradle.properties + 本计划勾选看板，随 2.0.27 发版一并提交。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -65,8 +65,8 @@
 
 ## 阶段 1：P0 缺陷修复（patch 版本，每项一发）
 
-### P1-1 [预留 2.0.25] 重复生成不再把文件写到模块根目录
-- [ ] 完成
+### P1-1 [预留 2.0.25] 重复生成不再把文件写到模块根目录 ✅（2026-09-15，2.0.25）
+- [x] 完成
 - **现状证据**：CodeGenerateService.generateXmlFile:424-440 —— 目录不存在（:427）或文件已存在（:437）时 `outputDirVariable = contentRoot` 降级继续写 → 半途重跑在模块根目录产生垃圾文件
 - **改动点**：
   1. generateXmlFile 改为返回结果枚举（SUCCESS / SKIP_FILE_EXISTS / FAIL_DIR_NOT_FOUND），去掉内部逐文件弹窗
@@ -77,9 +77,11 @@
   - 手动删掉目标目录再生成：报「目录不存在」且不在任何位置写文件
 - **测试**：runIde 验证（不需真实项目）
 - **风险**：低；只改错误分支，成功路径产物 diff 基线应零变化
+- **执行记录**：复现 ✓（DengqiMes order 模块连续两次生成，模块根出现 6 个垃圾文件——第 7 件 Moc 因根目录已有同名 BaseFactory.xml 抛「无法生成件」中断，与链路预判一致）；验收 1 ✓（二次生成 0 新文件、7 个已存在跳过、零弹窗；查询页 6 件与 Moc 各一条汇总通知，两方法独立调用所致，P3-3 表单化时统一）；验收 2 ✓（layout/Order 临时改名后生成：目录不存在跳过 1 个 + 已存在跳过 5 个，任何位置零写入）；基线 diff ✓ 7/7 字节级一致；工作副本已还原干净。**教训**：Order 目录含 44 个真实 layout XML，验收「目录不存在」必须临时改名整目录而非 rm（本次误删已 svn update 即时恢复）。**附带发现（供 P1-2）**：DB 读取路径即使选对 dev 连接（192.168.116.9 可达、SHOW CREATE TABLE 命令行手测正常）仍静默失败，错误被 println 吞——P1-2 修复时先在沙箱复现取真实异常。generateModelByFields（死代码）内两处 generateXmlFile 调用未适配汇总（忽略返回值，编译无影响），P4-2 删除。
 
-### P1-2 [预留 2.0.26] JDBC 读取后台化（修 EDT 冻结）+ 超时 + 错误可见
-- [ ] 完成
+### P1-2 [预留 2.0.26] JDBC 读取后台化（修 EDT 冻结）+ 超时 + 错误可见 ✅（2026-09-16，2.0.27——2.0.26 被计划外修复占用顺延）
+- [x] 完成
+- **执行记录**：验收 1 ✓（不可达连接 192.168.33.52 test 库点读取 → 有界时间弹「数据库读取失败」含 host:port 与脱敏原因，UI 不冻结；WARN 日志实证，修复前被 println 吞）；验收 2 ✓（表名弹窗取消 → sql/tableName/字段表原值不动，无 from null a）；验收 3 ✓（`biz;drop table x` 拒绝）；`grep System.out DatabaseMetadataUtil` 零命中 ✓；单测 6 用例组（表名校验/脱敏/host 提取）全过。**教训**：lambda → 匿名 Task.Backgroundable 迁移时 `this` 语义变化（`this.tableName` 须改 `DataModelGenerator.this.tableName`）。SSL 根因取证与回退决策见 P1-8（2026-09-16）。
 - **现状证据**：DataModelGenerator.fetchFieldsFromDatabase:228-274 在 invokeLater（EDT）内同步 `DriverManager.getConnection` + `SHOW CREATE TABLE`；DatabaseMetadataUtil.java:18 无连接超时；:25/28/35/118/181 错误全走 `System.out.println` 被吞
 - **改动点**：
   1. DatabaseMetadataUtil.getTableMetadata 用 `DriverManager.getConnection(url, props)` 传 `connectTimeout=3000, socketTimeout=10000`
@@ -87,7 +89,7 @@
   3. UI 侧：选连接 + 输表名留在 EDT；JDBC 查询放 `Task.Backgroundable`（纯网络调用，不碰 PSI/VFS，无需 read-action）；onSuccess 回 EDT 更新 fields + updateTableModel；onError 弹 MyPluginMessages.showError（带库地址脱敏后的错误原因）
   4. 表名输入校验（DataModelGenerator.java:245-246）：null/空直接提示中止；且必须匹配 `^[A-Za-z0-9_.]+$`（SHOW CREATE TABLE 字符串拼接，杜绝奇怪输入）
 - **验收标准**：
-  - 故意填错库地址点「从数据库读取」：≤3 秒弹明确错误，UI 全程不冻结
+  - 故意填错库地址点「从数据库读取」：有界时间内弹明确错误、UI 全程不冻结（connectTimeout=3000；2026-09-16 修订：本机透明 TCP 拦截实测 ~5 秒、不可达网络下界 ≈2×connectTimeout≈6 秒，用户确认按此口径，不追求 ≤3 秒）
   - 取消表名输入弹窗：无 `from null a` 状态污染（sql/tableName 保持原值）
   - `grep System.out src/main/java/com/zhiyin/plugins/utils/DatabaseMetadataUtil.java` 零命中
 - **测试**：runIde 验证 + 错误路径手测；单测覆盖表名校验正则
@@ -149,8 +151,9 @@
 - **风险**：中低；签名细节靠反编译核对兜底
 - **依赖**：P1-4（import/export 的模板条件结构先行）
 
-### P1-7 [预留顺延] 生成链路 EDT 慢操作断言修复（i18n 反查索引查询）
-- [ ] 完成
+### P1-7 [预留顺延] 生成链路 EDT 慢操作断言修复（i18n 反查索引查询）✅（2026-09-16，2.0.27 与 P1-2 同版）
+- [x] 完成
+- **执行记录**：两处索引查询移出 EDT——① i18n 反查批量化（新增 `MyPropertiesUtil.findModuleDataGridI18nPropertiesByValueBatch`，EDT 走 runReadAction / 后台走 runReadActionInSmartMode 双分支，逐值调用原方法命中语义不变）；② **连接发现**（DatabaseConnectionFinder）从 `fetchFieldsFromDatabase` 的 invokeLater 移入 Task.Backgroundable 预取、onSuccess 弹窗——②是第一轮验收实测漏网项（19 组 SlowOperations 断言全来自 DataModelGenerator.java:252 连接发现，i18n 反查本身零断言）。第二轮验收 ✓：全链路（从数据库读取 + 一键生成）Slow operations 断言 0。基线 diff 6/7 字节级一致；Layout 差异定性为**基线自身采集缺陷**（走「DDL 粘贴」路径 comment 归属错位：maintainer←地址等；DB 直读产物逐字段正确，`备注`→ordergrid.note 命中两轮复现，i18n 语义不变）。`grep allowSlowOperations src/` 仅剩 FeignClientRelatedItemLineMarkerProvider:42 活跃调用。**附带发现（待处理）**：ShowTableStructureAction.java:109 同模式 EDT 连接发现（表结构查看，非生成链路）；「DDL 粘贴」comment 归属错位疑似 TableParser/UI 层缺陷，建议专项核查后再决定是否立 P 项。
 - **现状证据**（2026-09-15 P0-1 基线采集时实际撞出，用户报内部错误弹窗，堆栈已核）：`DataModelGenerator.generateDataModel`（:543，一键生成按钮 EDT 链路）→ `CodeGenerateService.generateBaseQueryTypeFile:312` → `MyPropertiesUtil.findModuleDataGridI18nPropertiesByValue:475-476` 在 EDT 上跑 `FilenameIndex.getVirtualFilesByName` + `FileTypeIndex.getFiles`（`runReadActionInSmartMode` 内），触发 `SlowOperations.assertSlowOperationsAreAllowed` 断言——IU-2024.3.5 沙箱实测弹「Slow operations are prohibited on EDT」内部错误；:474 的 `SlowOperations.allowSlowOperations` 包装被注释掉。断言只记录不中断，产物正常，但每次生成都弹内部错误，且索引查询阻塞 EDT。
 - **改动点**：
   1. i18n 反查移出 EDT：生成前在后台预查所有字段的 i18n 命中结果（`Task.Backgroundable`，参照 P1-2 模式），EDT 只消费结果；或至少恢复 `SlowOperations.allowSlowOperations` 包装消掉断言弹窗（治标，二选一以前者为佳，可与 P1-2 的后台化一起做）
@@ -159,6 +162,17 @@
 - **测试**：runIde 验证 + 基线 diff
 - **风险**：低中；线程切换后 i18n 结果传递需保持生成顺序语义（columns 列表逐字段 put）
 - **关联**：P1-2（同为 EDT 阻塞治理，建议同版实施）；`docs/codegen-baseline/README.md` 已记录现象
+
+### P1-8 [预留顺延] JDBC 连接 SSL 兼容回退（老 MySQL yaSSL × JDK17）
+- [ ] 完成
+- **现状证据**（2026-09-16 P1-2 复现取证实锤）：MySQL 5.7.26（yaSSL，仅支持 TLSv1/1.1）× JDK17（TLSv1/1.1 默认禁用）× Connector/J 8.2.0 默认 sslMode=PREFERRED → 服务端直接掐断握手（`SSLHandshakeException: Remote host terminated the handshake`），即 P1-1 附带发现的「选对 dev 连接仍静默失败」根因；mysql CLI 不走 TLS 故命令行手测正常。jshell 同驱动实测 `sslMode=DISABLED` 可连（server 5.7.26）；`enabledTLSProtocols=TLSv1,TLSv1.1,TLSv1.2` 救不回来（JDK disabledAlgorithms 层过滤）
+- **改动点**：
+  1. DatabaseMetadataUtil 建连捕获 SSL 握手类异常（异常链含 SSLHandshakeException / "SSL" 关键字）后，url 追加（或覆盖）`sslMode=DISABLED` 自动重试一次；重试成功 LOG.warn 记录走了明文回退；仍失败才上抛原异常
+  2. 重试仅限插件侧建连（内网 dev 库场景），不改用户项目配置
+- **验收标准**：对 DengqiMes dev（192.168.116.9，MySQL 5.7.26）**无需改 properties** 即可读取成功；新 MySQL（TLSv1.2+）连接行为不变（不走回退）
+- **测试**：runIde 验证（先还原 DengqiMes 临时配置再测）
+- **风险**：低
+- **决策记录**：2026-09-16 用户确认走代码侧回退（非仅配置侧）；过渡期已在 DengqiMes dev 三个 properties（iot application-dev / config app-dev / txmanage application-dev）本地追加 sslMode=DISABLED，本项上线后可还原
 
 ---
 

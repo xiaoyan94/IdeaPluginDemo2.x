@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [2.0.27] - 2026-09-16
+
+fix: 代码生成器数据库读取后台化（超时 + 错误可见 + 表名校验）并根治生成链路 EDT 慢操作断言（codegen 改造 P1-2 + P1-7）
+
+- DatabaseMetadataUtil 建连改 `DriverManager.getConnection(url, props)` 显式传 connectTimeout=3000 / socketTimeout=10000；错误不再被 System.out.println 吞掉，改 Logger 记录并向上抛 SQLException（getTableMetadata / getAllDatabaseConnectionsMetaData），System.out 全量清零
+- 「从数据库读取」JDBC 查询移入 Task.Backgroundable（纯网络调用不碰 PSI）：选连接/输表名留 EDT，onSuccess 回 EDT 更新字段表与 sql，onError 弹「数据库读取失败」（显示 host:port，报错脱敏屏蔽 `user 'xxx'@`，URL 内嵌凭据打码）——错误库地址有界时间内失败，UI 不再冻结
+- 表名输入校验：null/空提示中止（取消表名弹窗不再产生 `from null a` 状态污染，sql/tableName 保持原值）；SHOW CREATE TABLE 为字符串拼接，表名必须匹配 `^[A-Za-z0-9_.]+$`（新增 DataModelGeneratorTest 单测覆盖校验/脱敏/host 提取）
+- P1-7 生成链路 EDT 慢操作断言修复：字段 i18n 反查（FilenameIndex/FileTypeIndex）改为生成前后台批量预查（新增 MyPropertiesUtil.findModuleDataGridI18nPropertiesByValueBatch，逐值调用原方法、命中语义不变），EDT 只消费结果；数据库连接发现（DatabaseConnectionFinder，同为索引查询）一并移出 EDT——IU-2024.3.5 沙箱实测修复前单次生成链路 19 组 SlowOperations 断言内部错误，修复后 0，基线产物 6/7 字节级一致（Layout 差异系基线采集走 DDL 粘贴路径 comment 归属错位，DB 直读产物为正确口径，`备注`→ordergrid.note 命中复现证明 i18n 语义不变）
+- 附带清理：MyPropertiesUtil 删除被注释的 SlowOperations.allowSlowOperations 死代码
+
 ## [2.0.26] - 2026-09-16
 
 fix: Layout URL 导航 line marker 在 Controller PSI 失效时抛 IllegalArgumentException
@@ -263,7 +273,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.26...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.27...HEAD
+[2.0.27]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.26...v2.0.27
 [2.0.26]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.25...v2.0.26
 [2.0.25]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.24...v2.0.25
 [2.0.24]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.22...v2.0.24
