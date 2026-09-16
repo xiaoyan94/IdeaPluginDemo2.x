@@ -67,7 +67,6 @@ public class LayoutUrlNavigationRelatedItemLineMarkerProvider extends RelatedIte
         Map<String, List<MethodInfo>> mapping = service.getMappingSnapshot();
 
         if (mapping.isEmpty()) {
-            System.out.println("[Microservices] 扫描中...");
             service.startScan(false);
             return;
         }
@@ -99,7 +98,10 @@ public class LayoutUrlNavigationRelatedItemLineMarkerProvider extends RelatedIte
     private List<PsiElement> getTargetPsiElements(List<MethodInfo> methodInfos) {
         List<PsiElement> targets = new ArrayList<>();
         for (MethodInfo methodInfo : methodInfos) {
-            targets.add(methodInfo.pointer().getElement());
+            PsiElement target = methodInfo.pointer().getElement();
+            if (target != null) {
+                targets.add(target);
+            }
         }
         return targets;
     }

@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [2.0.26] - 2026-09-16
+
+fix: Layout URL 导航 line marker 在 Controller PSI 失效时抛 IllegalArgumentException
+
+- LayoutUrlNavigationRelatedItemLineMarkerProvider.getTargetPsiElements 过滤 SmartPsiElementPointer.getElement() 为 null 的目标（对齐 HtmlUrl/UrlNavigationAnnotated 两个 Provider 既有写法）：Controller 文件在扫描后被修改/删除时指针失效返回 null，targets 变成 [null]，NavigationGutterIconBuilder.setTargets 校验非空直接抛 IllegalArgumentException（daemon line marker pass 报错）
+- 移除该 Provider 热路径上的 System.out.println("[Microservices] 扫描中...")：mapping 快照为空期间每个 XML 元素每次 pass 都触发，违反热路径禁 println 铁律；startScan 触发逻辑不变
+
 ## [2.0.25] - 2026-09-15
 
 fix: 代码生成器重复生成不再把文件降级写到模块根目录，逐文件弹窗改为一次汇总通知（codegen 改造 P1-1）
@@ -256,7 +263,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.25...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.26...HEAD
+[2.0.26]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.25...v2.0.26
 [2.0.25]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.24...v2.0.25
 [2.0.24]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.22...v2.0.24
 [2.0.22]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.21...v2.0.22
