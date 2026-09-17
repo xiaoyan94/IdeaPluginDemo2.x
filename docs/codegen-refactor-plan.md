@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0、阶段 1（P0-1～P0-3、P1-1～P1-9）已全部完成；P1-9（DDL 粘贴 comment 归属错位根治，随版修 decimal NOT NULL 截断）随 2.0.32 发版（2026-09-17）。下一项 **P2-1 i18n 缺失分析报告**（GATE-B 已确认，可直接开工）
-- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-5、P1-6、P1-7、P1-8、P1-9
-- **未提交变更清单**（发版提交后清空）：本轮 2.0.32 源码（TableParser.java + TableParserTest.kt）+ CHANGELOG + gradle.properties + 本计划勾选与 P1-9 核查结论/执行记录，随 2.0.32 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **当前进行到**：阶段 2 开工：P2-1（i18n 缺失分析报告，只读）随 2.0.33 发版（2026-09-17）。下一项 **P2-2 i18n 三语言 properties 追加生成**（前置 GATE-B 已确认 + P2-1 前缀映射表已实证）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1
+- **未提交变更清单**（发版提交后清空）：本轮 2.0.33 源码（CodeGenerateService.java、MyPropertiesUtil.java、I18nMissingReportDialog.java、两个新测试）+ CHANGELOG + gradle.properties + 本计划勾选与 P2-1 执行记录，随 2.0.33 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -201,8 +201,9 @@
 
 ## 阶段 2：生成能力增强（收尾升 2.1.0）
 
-### P2-1 [预留 2.1.0 前置] i18n 缺失分析报告（只读，先对口径）
-- [ ] 完成
+### P2-1 [预留 2.1.0 前置→2.0.33] i18n 缺失分析报告（只读，先对口径）✅（2026-09-17，2.0.33）
+- [x] 完成
+- **执行记录**：开发委托子代理（开发→编译→单测），主会话独立复跑（编译 EXIT=0、全量 48 例 0 失败）。实现：`MyPropertiesUtil.deriveI18nKeyPrefix` 纯函数（com.zhiyin.mes. 开头且 ≥6 段去倒数第二段项目段）+ `CodeGenerateService` 收集循环（命中/缺失计数、`buildProposedI18nKey`/`isI18nMissingReportable` 包级静态供单测）+ `I18nMissingReportDialog`（DialogWrapper 只读，仅「关闭」按钮；平台核实 `setCancelButtonVisible` 已不存在，改 `createActions()` 返回 `getOKAction()`）；空清单不弹、无注释字段不进清单、模板与产物零改动。**前缀映射表实证（GATE-B 核对归纳，P2-2 实现输入）**：① key = `<模块前缀>.<gridId 全小写>.<field 小写>`，gridId 即模板 `${dataGridName}Grid`（真实 Order.xml `OrderGrid` ↔ `com.zhiyin.mes.app.order.ordergrid.factoryid` 逐键一致）；② 前缀 = 模块名去项目段，DengqiMes order/basic/quality/wms 四模块主流族全实证，HaichengMes `com.zhiyin.mes.app.haicheng.order` 派生 `com.zhiyin.mes.app.order` 与其存量族（登骐拷贝）完全一致；③ 存量杂族（`com.zhiyin.mes.web.*`、裸字段键 `routingtype`、无 grid 后缀 `productionbatch` 等）为历史手写，不属生成器口径；④ `getSimpleModuleName`（文件名口径，system→sysadm 等）与前缀口径互不套用，P2-4 外置。**真实验证（用户，HaichengMes order 模块 biz_base_factory + GridName=BaseFactory，环境自选）**：命中 2（note←ordergrid.note、maintainer←productionbatch.maintainer）/ 缺失 22，主会话 python 解码 native2ascii 对真实 properties 全量复核零误报零漏报；与登骐 oracle 的差异全部由两库表结构差异解释（P1-9 已记录：海程表多 mainproduct/level、version 带注释、id 无注释、maintainer 带注释）；DengqiMes 侧由主会话静态核对（仅 note 命中 + 前缀族实证）双侧覆盖。**P2-2 输入线索**：① 真实数据存在 `<field>dsp` 独立 key（statedsp/typedsp，值与原字段同），P2-2 需决定 state/status 字段是否顺带补 dsp key；② 命中语义是「按值 findFirst」——同值多键（备注 5 键）取文件序首个，P2-2 幂等判重须按 key 而非值；③ 验证产物在 Haicheng 工作副本，已提醒用户 revert+删除。**教训**：① runIde 验证完必须先杀沙箱 IDE 进程再发版构建（prepareSandbox 对运行中沙箱的 jar 内存映射锁 FAILED——runide-sandbox-process-lock 教训在发版场景重现）；② CHANGELOG 必须只写 Unreleased 别手写版本章节（本次手写后跑任务前改回，patchChangelog 在 FAILED 的首轮已归档、二轮空 Unreleased 无重复，侥幸未踩坑）。
 - **目的**：把「key 前缀规则」用 DengqiMes 真实数据确认后再动写文件逻辑（先确认口径再实现）
 - **现状证据**：CodeGenerateService.java:312 仅用字段 comment 反查已有 key（findModuleDataGridI18nPropertiesByValue），查不到时布局 Title 退化为裸中文（BaseQueryTypeLayout.ftl:18 `${column.i18nKey!column.chs!column.name}`）；真实项目每模块有 `resources/i18n/datagrid/<mod>.datagrid_{zh_CN,zh_TW,en_US}.properties`，key 形如 `com.zhiyin.mes.app.order.ordergrid.orderno=计划单号`
 - **改动点**：

@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.0.33] - 2026-09-17
+
+feat: i18n 缺失分析报告（只读，codegen 改造 P2-1）——生成完成后弹缺失清单：字段名 → 拟生成 key → 拟中文值，为 P2-2 三语言追加生成对口径
+
+- **拟生成 key 规则（GATE-B）**：`<模块 i18n 前缀>.<gridName 小写>grid.<字段名小写>`；模块前缀 = 模块名去项目段（`com.zhiyin.mes.app.dengqi.order` → `com.zhiyin.mes.app.order`，DengqiMes order/basic/quality/wms 四模块真实 properties 主流族实证；key 的 grid 段 = 模板生成 gridId `GridName+"Grid"` 全小写，真实 Order.xml `OrderGrid` ↔ `ordergrid` 逐键核对）——规则与 `getSimpleModuleName`（文件名口径，system→sysadm 等映射）互不套用，计划 P2-4 外置进配置
+- **报告对话框**：`I18nMissingReportDialog`（DialogWrapper 只读报告），顶部展示推导前缀 + 命中/缺失计数 + JBTable 三列（字段名/拟生成 key/拟中文值），单元格可选中复制；仅统计 comment 非空且按值反查未命中的字段（无注释字段不进清单），缺失列表为空不弹窗；生成产物与模板零改动（i18nKey 缺省回退保持，写入闭环留给 P2-2）
+- 真实验证（HaichengMes order 模块，biz_base_factory，GridName=BaseFactory）：命中 2（note←`...ordergrid.note`、maintainer←`...productionbatch.maintainer`）/ 缺失 22，与真实 properties 逐条核对零误报零漏报；模块 `com.zhiyin.mes.app.haicheng.order` 派生前缀 `com.zhiyin.mes.app.order` 与海程存量 key 族（登骐拷贝）完全一致，跨项目验证派生规则
+- 单测 38 → 48（前缀推导 5 例 + key 拼装与缺失判定 5 例），全量 0 失败
+
 ## [2.0.32] - 2026-09-17
 
 fix: 「DDL 粘贴」comment 归属错位根治（codegen 改造 P1-9）——TableParser 改字段定义片段化解析，单行/多行 DDL 统一正确
@@ -328,7 +337,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.32...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.33...HEAD
+[2.0.33]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.32...v2.0.33
 [2.0.32]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.31...v2.0.32
 [2.0.31]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.30...v2.0.31
 [2.0.30]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.29...v2.0.30

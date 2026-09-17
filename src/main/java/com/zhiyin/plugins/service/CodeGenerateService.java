@@ -25,6 +25,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.zhiyin.plugins.notification.MyPluginMessages;
+import com.zhiyin.plugins.ui.codeGenerator.I18nMissingReportDialog;
 import com.zhiyin.plugins.utils.MyPropertiesUtil;
 import com.zhiyin.plugins.utils.ProjectTypeChecker;
 import com.zhiyin.plugins.utils.StringUtil;
@@ -326,21 +327,33 @@ public final class CodeGenerateService {
         dataGrid1.put("ckDummyColumn", "true");
         List<Map<String, Object>> columns = new ArrayList<>(fields);
         Map<String, List<Property>> precomputedI18n = i18nByComment == null ? Collections.emptyMap() : i18nByComment;
-        columns.forEach(field -> {
+        // P2-1：命中/缺失计数与缺失清单（字段名 → 拟生成 key → 拟中文值），生成完成后弹只读报告
+        int i18nHitCount = 0;
+        int i18nMissCount = 0;
+        List<I18nMissingEntry> i18nMissingEntries = new ArrayList<>();
+        for (Map<String, Object> field : columns) {
             field.put("chs", field.get("comment"));
             Object commentObj = field.get("comment");
-            List<Property> properties = commentObj == null
+            String comment = commentObj == null ? null : commentObj.toString();
+            List<Property> properties = comment == null
                     ? Collections.emptyList()
-                    : precomputedI18n.getOrDefault(commentObj.toString(), Collections.emptyList());
-            if (!properties.isEmpty()) {
+                    : precomputedI18n.getOrDefault(comment, Collections.emptyList());
+            boolean i18nMatched = !properties.isEmpty();
+            if (i18nMatched) {
+                i18nHitCount++;
                 field.put("i18nKey", properties.get(0).getKey());
                 field.put("chs", properties.get(0).getValue());
                 if (properties.size() > 2) {
                     field.put("cht", properties.get(1).getValue());
                     field.put("eng", properties.get(2).getValue());
                 }
+            } else if (isI18nMissingReportable(comment, i18nMatched)) {
+                i18nMissCount++;
+                String fieldName = String.valueOf(field.get("name"));
+                i18nMissingEntries.add(new I18nMissingEntry(fieldName,
+                        buildProposedI18nKey(module.getName(), modelName, fieldName), comment));
             }
-        });
+        }
         dataGrid1.put("columns", columns);
         List<Map<String, Object>> queryFields = new ArrayList<>(fields);
         queryFields.forEach(field -> field.put("ref", field.get("name")));
@@ -434,6 +447,12 @@ public final class CodeGenerateService {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
         } finally {
             notifyGenerateSummary(results);
+        }
+        // P2-1：缺失清单非空才弹只读报告（本方法在 Task.Backgroundable#onSuccess 的 EDT 上被调用，
+        // 弹窗安全；空清单不弹，避免噪音）
+        if (!i18nMissingEntries.isEmpty()) {
+            new I18nMissingReportDialog(MyPropertiesUtil.deriveI18nKeyPrefix(module.getName()),
+                    module.getName(), i18nHitCount, i18nMissCount, i18nMissingEntries).show();
         }
     }
 
@@ -550,6 +569,22 @@ public final class CodeGenerateService {
 
     static boolean resolveGenerateImport(Map<String, Object> paramsMap) {
         return Boolean.TRUE.equals(paramsMap.get("generateImport"));
+    }
+
+    // P2-1：i18n 缺失报告数据行（字段名 → 拟生成 key → 拟中文值），P2-2 写入闭环复用
+    public record I18nMissingEntry(String fieldName, String proposedKey, String chs) {
+    }
+
+    // P2-1：拟生成 key 拼装（包级静态，供单测锁定，规则 GATE-B 已确认）：
+    // <模块 i18n 前缀>.<gridName 小写>grid.<字段名小写>——key 的 grid 段 = 模板
+    // BaseQueryTypeLayout.ftl 生成的 ${grid.dataGridName}Grid 全小写（DengqiMes Order.xml 实证）
+    static String buildProposedI18nKey(String moduleName, String gridName, String fieldName) {
+        return MyPropertiesUtil.deriveI18nKeyPrefix(moduleName) + "." + gridName.toLowerCase() + "grid." + fieldName.toLowerCase();
+    }
+
+    // P2-1：缺失判定（包级静态，供单测锁定）：comment 非空白且预查 i18n 未命中 → 计入缺失报告
+    static boolean isI18nMissingReportable(String comment, boolean i18nMatched) {
+        return !i18nMatched && comment != null && !comment.trim().isEmpty();
     }
 
     // P1-6：导出框架解析——paramsMap 值 ∈ {auto, easyexcel, easyexcel2}；auto/缺失时探测模块 classpath

@@ -643,6 +643,45 @@ public class MyPropertiesUtil {
         return simpleModuleName;
     }
 
+    /**
+     * P2-1：由模块名推导模块级 i18n key 前缀（纯字符串函数，不接 Module，便于单测）。
+     * <p>规则（GATE-B 已确认，order/basic/quality/wms 四模块真实 properties 实证主流族）：
+     * 以 {@code com.zhiyin.mes.} 开头且段数 ≥ 6 时去掉倒数第二段（项目段）后重组，如
+     * {@code com.zhiyin.mes.app.dengqi.order} → {@code com.zhiyin.mes.app.order}、
+     * {@code com.zhiyin.mes.sys.dengqi.auth} → {@code com.zhiyin.mes.sys.auth}；
+     * 段数 ≤ 5（无项目段）或非 com.zhiyin.mes. 开头时原样返回。</p>
+     * <p>注意与 {@link #getSimpleModuleName(Module)}（system→sysadm 等映射）口径不同：
+     * 那是 properties 文件名口径，i18n 前缀不套用该映射；本规则计划在 P2-4 外置。</p>
+     *
+     * @param moduleName 模块名（Module#getName 原始段）
+     * @return 模块 i18n 前缀；null/空入参返回空串
+     */
+    public static String deriveI18nKeyPrefix(String moduleName) {
+        if (moduleName == null || moduleName.isEmpty()) {
+            return "";
+        }
+        if (!moduleName.startsWith("com.zhiyin.mes.")) {
+            return moduleName;
+        }
+        String[] segments = moduleName.split("\\.");
+        if (segments.length < 6) {
+            return moduleName;
+        }
+        // 去掉倒数第二段（项目段，如 dengqi）后重组
+        int projectSegmentIndex = segments.length - 2;
+        StringBuilder prefix = new StringBuilder();
+        for (int i = 0; i < segments.length; i++) {
+            if (i == projectSegmentIndex) {
+                continue;
+            }
+            if (prefix.length() > 0) {
+                prefix.append('.');
+            }
+            prefix.append(segments[i]);
+        }
+        return prefix.toString();
+    }
+
     public static String getTop3PropertiesValueString(List<Property> properties) {
         boolean native2AsciiForPropertiesFiles = isNative2AsciiForPropertiesFiles();
         return properties.stream()
