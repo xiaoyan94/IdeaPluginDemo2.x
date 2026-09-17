@@ -24,7 +24,147 @@ public class TableParser {
         }
     }
 
+    /**
+     * P1-9：按「字段定义片段化」解析 CREATE TABLE——先定位列定义体（第一个 '(' 到与之
+     * 配对的 ')' 之间），再在顶层逗号处切片段，逐片段提取列名/类型/长度/注释/非空标记。
+     * 旧实现靠整段正则 + 「. 不跨行」偶然保证 comment 归属，DDL 被单行化（DDL 粘贴输入框
+     * 是单行 JTextField，换行被剥离）后无 COMMENT 的字段会跨字段抢走后面第一个 COMMENT，
+     * 造成注释整体错位；且 nullable 正则的 [^,]+ 会被 decimal(19,4) 类型内逗号截断致
+     * NOT NULL 检测失效。片段化后两个问题一并消除。
+     */
     public static List<Map<String, Object>> parseCreateTable(String createTableSql) {
+        String columnBody = extractColumnBody(createTableSql);
+        if (columnBody != null) {
+            return parseColumnFragments(columnBody);
+        }
+        // 列定义体定位失败（畸形 DDL）：回退旧的整段正则解析，保证不比修复前更差
+        return parseCreateTableByRegex(createTableSql);
+    }
+
+    /**
+     * 定位 CREATE TABLE 的列定义体：第一个 '(' 到与之配对的 ')' 之间。
+     * 括号深度与单引号字符串感知（字符串内 '' 为转义单引号，不计入配对）；定位失败返回 null。
+     */
+    private static String extractColumnBody(String sql) {
+        int open = sql.indexOf('(');
+        if (open < 0) {
+            return null;
+        }
+        int depth = 0;
+        boolean inString = false;
+        for (int i = open; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (inString) {
+                if (c == '\'') {
+                    if (i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+                        i++; // '' 为字符串内转义的单引号，不结束字符串
+                    } else {
+                        inString = false;
+                    }
+                }
+            } else if (c == '\'') {
+                inString = true;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    return sql.substring(open + 1, i);
+                }
+            }
+        }
+        return null; // 找不到与之配对的右括号
+    }
+
+    /**
+     * 在顶层逗号处把列定义体切分为片段：括号深度感知，单引号字符串内的逗号/括号不参与
+     * 切分（'' 转义不结束字符串），KEY (`a`,`b`) 与 decimal(19,4) 内的逗号都不会误切。
+     */
+    private static List<String> splitColumnDefinitions(String body) {
+        List<String> fragments = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int depth = 0;
+        boolean inString = false;
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (inString) {
+                current.append(c);
+                if (c == '\'') {
+                    if (i + 1 < body.length() && body.charAt(i + 1) == '\'') {
+                        current.append('\'');
+                        i++; // '' 为转义单引号，整对保留在片段内（COMMENT 值还原时再展开）
+                    } else {
+                        inString = false;
+                    }
+                }
+            } else if (c == '\'') {
+                inString = true;
+                current.append(c);
+            } else if (c == '(') {
+                depth++;
+                current.append(c);
+            } else if (c == ')') {
+                depth--;
+                current.append(c);
+            } else if (c == ',' && depth == 0) {
+                String trimmed = current.toString().trim();
+                if (!trimmed.isEmpty()) {
+                    fragments.add(trimmed);
+                }
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+        String tail = current.toString().trim();
+        if (!tail.isEmpty()) {
+            fragments.add(tail);
+        }
+        return fragments;
+    }
+
+    /**
+     * 逐片段提取列定义：片段头 `name` type(len[,scale]) 定名列/类型/长度（length 语义与旧
+     * 实现一致：只取第一个数字、有 scale 的只存第一个——decimal 丢 scale 属 P2-5 范围）；
+     * 片段内找 COMMENT '...'（值内 '' 还原为 '）；片段含 NOT NULL 或 AUTO_INCREMENT 则
+     * nullable=false。不具列定义形态的片段（PRIMARY KEY / KEY / UNIQUE KEY / CONSTRAINT /
+     * INDEX 开头，片段头不匹配）直接跳过。
+     */
+    private static List<Map<String, Object>> parseColumnFragments(String body) {
+        List<Map<String, Object>> columns = new ArrayList<>();
+
+        Pattern headerPattern = Pattern.compile("`(\\w+)`\\s+(\\w+)(\\((\\d+)(,(\\d+))?\\))?");
+        // COMMENT 值内 '' 为转义单引号，整对消费后再还原，避免值内引号提前截断
+        Pattern commentPattern = Pattern.compile("COMMENT\\s+'((?:[^']|'')*)'");
+
+        for (String fragment : splitColumnDefinitions(body)) {
+            Matcher header = headerPattern.matcher(fragment);
+            if (!header.lookingAt()) {
+                continue;
+            }
+            String columnName = header.group(1);
+            boolean notNullable = fragment.contains("NOT NULL") || fragment.contains("AUTO_INCREMENT");
+
+            String comment = "";
+            Matcher commentMatcher = commentPattern.matcher(fragment);
+            if (commentMatcher.find()) {
+                comment = commentMatcher.group(1).replace("''", "'");
+            }
+
+            Map<String, Object> columnInfo = new HashMap<>();
+            columnInfo.put("name", columnName == null ? "" : columnName.toLowerCase());
+            columnInfo.put("type", getType(header.group(2)));
+            columnInfo.put("length", header.group(4) != null ? header.group(4) : "");
+            columnInfo.put("nullable", notNullable ? "false" : "true");
+            columnInfo.put("isRequired", notNullable ? "true" : "false");
+            columnInfo.put("comment", comment);
+            columns.add(columnInfo);
+        }
+        return columns;
+    }
+
+    /** 旧版整段正则解析：仅在列定义体定位失败（畸形 DDL）时兜底，原始实现原样保留 */
+    private static List<Map<String, Object>> parseCreateTableByRegex(String createTableSql) {
         List<Map<String, Object>> columns = new ArrayList<>();
 
         // Regular expression to match columns

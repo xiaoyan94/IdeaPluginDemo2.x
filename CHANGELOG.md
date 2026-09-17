@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [2.0.32] - 2026-09-17
+
+fix: 「DDL 粘贴」comment 归属错位根治（codegen 改造 P1-9）——TableParser 改字段定义片段化解析，单行/多行 DDL 统一正确
+
+- **根因**：DDL 粘贴输入框是单行 JTextField（`Messages.showInputDialog`），粘贴多行 DDL 时换行被剥离 → DDL 单行化后，`parseCreateTable` 的 comment 正则 `` `(\w+)`.*?COMMENT\s+'(.*?)' `` 失去「`.` 不跨行」的偶然防线——无 COMMENT 的字段作为匹配起点，`.*?` 扩到**下一个任意字段**的 COMMENT 抢走注释，被跨过的字段丢注释（错位形态：maintainer←地址、delflag←第三方推送工厂、version←数据采集方式、status←城市，面包—火腿整体前移一位，与 2.0.24 基线 Layout 错位逐字段一致）；P1-4 观察到的「同输入仅偶尔错位」实为粘贴换行是否被剥的差异，非状态残留
+- **修复**：`parseCreateTable` 重写为「字段定义片段化」——括号深度 + 单引号转义（`''`）感知地定位列定义体并在顶层逗号切分片段，逐片段以 `lookingAt()` 锚定片段头提取 name/type/length，片段内提 COMMENT（值内 `''` 还原为 `'`）与 NOT NULL/AUTO_INCREMENT；PRIMARY KEY / KEY / CONSTRAINT / INDEX 等非列片段自然跳过，KEY 定义行的索引 COMMENT 不再污染列注释；列定义体定位失败（畸形 DDL）回退旧整段正则兜底，不比修复前更差
+- **随版修复（同源缺陷）**：nullable 正则 `[^,]+` 被 `decimal(19,4)` 类型内逗号截断致 NOT NULL 检测失效（误判 nullable=true）——片段化后逐片段判定，`price decimal(19,4) NOT NULL` 正确出 nullable=false
+- 单测 34 → 38（TableParserTest 新增 4 例：单行化 DDL 三形态解析全等 + 9 个实锤错位字段逐一断言、KEY 行 COMMENT 不挂列、decimal NOT NULL 判定、comment 含 `''` 转义与逗号不切断），全量 0 失败
+- 验证（HaichengMes order 模块，biz_base_factory）：多行粘贴 vs 单行粘贴（旧版必错位形态）产物**字节级一致**（归一轮次前缀后）且逐字段归属正确；DB 直读路径（不经 TableParser）逐字段正确回归
+
 ## [2.0.31] - 2026-09-17
 
 feat: 导出方法按项目框架版本适配 EasyExcel2 自动探测（codegen 改造 P1-6 + P1-8），随版修复生成器布局、模板旧写法签名、折叠翻译内存泄漏与 EDT 断言
@@ -318,7 +328,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.31...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.32...HEAD
+[2.0.32]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.31...v2.0.32
 [2.0.31]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.30...v2.0.31
 [2.0.30]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.29...v2.0.30
 [2.0.29]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.28...v2.0.29

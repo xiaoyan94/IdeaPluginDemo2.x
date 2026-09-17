@@ -6,9 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0 与 P1-1～P1-8 已完成；P1-6 + P1-8 及 4 项随版修复（生成器布局 / 模板旧写法签名 / HtmlFoldingManager 泄漏 / EDT PSI 断言）随 2.0.31 发版（2026-09-17）。下一项 P1-9（预留号顺延：P1-9→2.0.32）；P2-1 GATE-B 已确认可直接开工
-- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-5、P1-6、P1-7、P1-8
-- **未提交变更清单**（发版提交后清空）：本轮 2.0.31 源码（5 Java + 1 模板 + 1 金测 + 2 golden + 1 新单测）+ 基线 Controller 显式修订 + CHANGELOG + gradle.properties + 本计划勾选，随 2.0.31 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **当前进行到**：阶段 0、阶段 1（P0-1～P0-3、P1-1～P1-9）已全部完成；P1-9（DDL 粘贴 comment 归属错位根治，随版修 decimal NOT NULL 截断）随 2.0.32 发版（2026-09-17）。下一项 **P2-1 i18n 缺失分析报告**（GATE-B 已确认，可直接开工）
+- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-5、P1-6、P1-7、P1-8、P1-9
+- **未提交变更清单**（发版提交后清空）：本轮 2.0.32 源码（TableParser.java + TableParserTest.kt）+ CHANGELOG + gradle.properties + 本计划勾选与 P1-9 核查结论/执行记录，随 2.0.32 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -182,8 +183,8 @@
 - **风险**：低
 - **决策记录**：2026-09-16 用户确认走代码侧回退（非仅配置侧）；过渡期已在 DengqiMes dev 三个 properties（iot application-dev / config app-dev / txmanage application-dev）本地追加 sslMode=DISABLED，本项上线后可还原
 
-### P1-9 [预留顺延]「DDL 粘贴」comment 归属错位专项核查（TableParser/UI 层）
-- [ ] 完成
+### P1-9 [预留顺延→2.0.32]「DDL 粘贴」comment 归属错位专项核查（TableParser/UI 层）✅（2026-09-17，2.0.32）
+- [x] 完成
 - **现状证据**（2026-09-16 P1-7 第二轮验收发现，来源 P1-7 执行记录附带发现②）：P0-1 基线经「DDL 粘贴」路径采集，产物中 comment 归属错位（`maintainer` 拿到地址类注释等）；同表走「从数据库读取」路径逐字段正确（`备注`→ordergrid.note 两轮复现）→ 缺陷在 DDL 粘贴解析链路（TableParser.parseCreateTable 或 UI 字段表填充层），非模板生成层
 - **改动点**：
   1. 先核查定位：用 `docs/codegen-baseline/input/` 存档 DDL 走粘贴路径，比对 TableParser 解析出的字段↔comment 映射与 DB 直读结果，锁定错位环节（解析层 or UI 填充层），结论带 file:line 证据落回本节
@@ -193,6 +194,8 @@
 - **测试**：TableParser 单测 + runIde 双路径同表 diff
 - **风险**：低（核查先行；生成主链路不受影响——DB 直读路径已正确）
 - **关联**：P0-1（基线）、P0-2（单测护栏）、P1-7（发现来源）
+- **核查结论（2026-09-17，已锁定根因）**：**解析层缺陷 + 单行输入触发**。① 错位形态实锤：基线 Layout（BaseFactory.xml:33-186）中每个「无 COMMENT 字段」抢走**下一个有 COMMENT 字段**的注释（maintainer←地址、delflag←第三方推送工厂、version←数据采集方式 DataGetType、status←城市），被跨过的字段 comment 反而为空——面包—火腿整体前移一位。② 机制：`fetchFieldsFromTableSQL` 的 DDL 输入用 `Messages.showInputDialog`（DataModelGenerator.java:426，单行 JTextField），粘贴多行 DDL 时换行被剥 → DDL 单行化；TableParser.java:36 commentRegex `` `(\w+)`.*?COMMENT\s+'(.*?)' `` 无 DOTALL，多行时靠「`.` 不跨行」偶然防线、单行时无 COMMENT 字段起点把 `.*?` 扩到下一个任意字段的 COMMENT 抢注释。③ 证据闭环：python 复刻同一正则跑存档 DDL（docs/codegen-baseline/input/biz_base_factory.sql），多行原样解析正确、`\n`→空格单行化后错位形态与基线 Layout **逐字段一致**（8 个核对字段全对上）。④ P1-4「非确定」之谜解释：三轮「同输入」实为粘贴换行是否被剥的差异（复制来源/方式不同），非状态残留——修复解析层后输入形态不再影响结果。⑤ 顺带发现同源缺陷：nullableRegex（TableParser.java:41）`[^,]+` 到第一个逗号截断，`decimal(19,4) NOT NULL` 因类型内逗号致 NOT NULL 检测失效（误判 nullable=true），随本项片段化修复一并解决。⑥ UI 层排除：`fetchFieldsFromTableSQL` fields.clear() 后 addAll 全新 Map（DataModelGenerator.java:436-437），`updateTableModel`（:491-566）按 fields 顺序逐行 addRow，无索引错位可能；TableParser 无 static 可变状态（纯函数）。修复方案：parseCreateTable 改「字段定义片段化」——括号深度+单引号转义感知的顶层逗号切分，逐片段提取 name/type/length/comment/nullable，多行/单行/任意空白统一正确。
+- **执行记录**：修复委托子代理完成（开发→编译→单测），主会话独立复跑验收。实现：parseCreateTable 入口分流（extractColumnBody 定位成功走 parseColumnFragments 片段化，失败回退 parseCreateTableByRegex 旧三正则原样兜底）；片段头 lookingAt() 锚定（PRIMARY KEY / KEY / CONSTRAINT / INDEX 非列片段自然跳过，KEY 行索引 COMMENT 不再污染列注释）；COMMENT 值内 `''` 还原为 `'`；NOT NULL/AUTO_INCREMENT 逐片段判定（decimal 类型内逗号截断缺陷随之消除）；输出 Map 键值语义与旧实现完全一致（name 小写 / "true""false" 字符串 / comment 缺省 "" / length 只取第一个数字——scale 属 P2-5 未动）。单测 34 → 38（新增：单行化三形态全等 + 9 个实锤错位字段断言、KEY 行不挂列、decimal NOT NULL、`''` 转义与值内逗号），全量 0 失败，既有 biz_product 多行快照零改动全过。真实验证（用户在 **HaichengMes** order 模块，biz_base_factory 三轮）：A 多行粘贴 / B 单行粘贴（旧版必错位形态）产物归一 GridName 轮次前缀后**字节级一致**且逐字段归属正确（address=地址、3rdflag=第三方推送工厂、datagettype=数据采集方式、city=城市，maintainer/delflag/version/status 空）；C DB 直读逐字段正确（Haicheng 库同名表结构与存档 DDL 不同——多 mainproduct 列、maintainer 有 comment'维护人'，A/C 差异均系两库表不同非解析问题）。**基线 Layout 重采：用户豁免**——docs/codegen-baseline 的 Layout 仍为 2.0.24 错位版，**后续每版 diff 基线时该件的预期差异 = comment 归属修正**（maintainer/delflag/version/status 归位），勿误判为回归；其余 6 件基线不受影响。**教训**：① 用户真实验证环境由用户自选（本轮在 HaichengMes 而非 DengqiMes 沙箱），给操作单时别预设项目路径；② 用户用 A_/B_/C_ GridName 前缀规避同名跳过（P1-1），比对产物前先归一前缀；③ 验证产物可能被 IDEA svn 集成自动 add 进用户业务 changelist，收尾时须提醒 revert+删除（本轮用户已自行清理）。
 
 ---
 
