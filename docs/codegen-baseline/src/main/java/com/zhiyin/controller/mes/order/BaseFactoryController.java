@@ -75,9 +75,7 @@ public class BaseFactoryController extends BaseController {
             Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
             List<Map> rows = (List<Map>) recordMap.get("rows");
             String fileName = I18nUtil.getMessage(userCode, "BaseFactory");
-            EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), (String[]) columnMap.get("fieldtype"), rows, fileName, params);
-            // 之前的写法
-            // EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
+            EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
         } catch (Exception e) {
             logger.error("BaseFactoryController::exportBaseFactory catch exception:", e);
             return wrapperException(params, e, json);

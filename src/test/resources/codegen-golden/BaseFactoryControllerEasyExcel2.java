@@ -4,10 +4,9 @@ import com.alibaba.fastjson.JSONObject;
 import com.zhiyin.aspect.SysLogger;
 import com.zhiyin.controller.BaseController;
 import com.zhiyin.i18n.I18nUtil;
-import com.zhiyin.service.excel.EasyExcelUtils;
+import com.zhiyin.service.excel.EasyExcel2Utils;
 import com.zhiyin.service.excel.ExcelExportService;
 import com.zhiyin.service.order.BaseFactoryService;
-import com.zhiyin.utils.DateUtils;
 import com.zhiyin.utils.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,9 +20,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.FileInputStream;
-import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,6 +37,9 @@ public class BaseFactoryController extends BaseController {
 
     @Resource
     private ExcelExportService excelExportService;
+
+    @Resource
+    private EasyExcel2Utils EasyExcel2Utils;
 
     @RequestMapping(value = "/BaseFactory", method = {RequestMethod.POST, RequestMethod.GET})
     public ModelAndView createBaseFactoryView(HttpServletRequest request) throws Exception {
@@ -71,11 +71,9 @@ public class BaseFactoryController extends BaseController {
             Map<String, Object> paramap = JSONObject.parseObject(paraStr);
             params.putAll(paramap);
             String userCode = StringUtils.getStringFromMap(params, "usercode");
-            Map<String, Object> recordMap = baseFactoryService.queryBaseFactoryList(params);
             Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
-            List<Map> rows = (List<Map>) recordMap.get("rows");
             String fileName = I18nUtil.getMessage(userCode, "BaseFactory");
-            EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
+            EasyExcel2Utils.writeExportExcel(response, fileName, (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), (String[]) columnMap.get("fieldtype"), fileName, baseFactoryService, "queryBaseFactoryList", params);
         } catch (Exception e) {
             logger.error("BaseFactoryController::exportBaseFactory catch exception:", e);
             return wrapperException(params, e, json);

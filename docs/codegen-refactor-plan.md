@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 0 与 P1-1～P1-5、P1-7 已完成；P1-5 随 2.0.30 发版提交（2026-09-16）。下一项 P1-6（预留号顺延：P1-6→2.0.31）；P1-8 证据已齐、可插队（DengqiMes dev 三个 properties 的临时 sslMode=DISABLED 待还原后再测）；P1-9 独立可并行（P1-4 执行记录已补非确定性新线索：同窗重复解析时序）
-- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-5、P1-7
-- **未提交变更清单**（发版提交后清空）：本轮 P1-5 源码（2 Java）+ CHANGELOG + gradle.properties + 本计划勾选看板随 2.0.30 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid36440.log 仍为本机杂项，不随提交。
+- **当前进行到**：阶段 0 与 P1-1～P1-8 已完成；P1-6 + P1-8 及 4 项随版修复（生成器布局 / 模板旧写法签名 / HtmlFoldingManager 泄漏 / EDT PSI 断言）随 2.0.31 发版（2026-09-17）。下一项 P1-9（预留号顺延：P1-9→2.0.32）；P2-1 GATE-B 已确认可直接开工
+- **已完成**：P0-1、P0-2、P0-3、P1-1、P1-2、P1-3、P1-4、P1-5、P1-6、P1-7、P1-8
+- **未提交变更清单**（发版提交后清空）：本轮 2.0.31 源码（5 Java + 1 模板 + 1 金测 + 2 golden + 1 新单测）+ 基线 Controller 显式修订 + CHANGELOG + gradle.properties + 本计划勾选，随 2.0.31 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -128,7 +128,7 @@
 
 ### P1-5 [预留 2.0.29→2.0.30] 连接选择对话框：密码打码 + 路径可辨识 ✅（2026-09-16，2.0.30）
 - [x] 完成
-- **执行记录**：验收 3 ✓ 首轮即过（选中连接读取链路回归正常）；验收 1/2 首轮未过、二轮修复后过——① Path 显示完整相对路径太长，DengqiMes 各行公共前缀 `springboot/app/...` 相同、差异段（模块名）在中尾部被列宽截断，区分度反降 → 显示层压缩：去除本批最长公共目录前缀 + `src/main/resources`（`src/main/webapp`）折叠为 `…` + Path 列悬停 tooltip 显示完整路径 + Path 列 320 宽/URL 列限宽，压缩后形如 `com.zhiyin.mes.app.dengqi.order/…/application-dev.properties` 可辨识；② 双击行进入单元格编辑而非选中 → DefaultTableModel 匿名子类 isCellEditable 恒 false（展示型表格），双击正常冒泡到确认逻辑。**关键约束**：`fileName` key 保持原值不动（MyProjectService.java:342 按 `app-dev.properties` 精确匹配消费），新增独立 `filePath` key 存相对路径（VfsUtilCore.getRelativePath，项目外回退全路径）。单测 22 例零回归。**附带发现（存量）**：IDE 退出时 HtmlFoldingManager 报 ROOT_DISPOSABLE 未 dispose 内存泄漏告警（与本次改动无关，疑与 2026-08 泄漏事故同类存量问题）。**教训**：runIde 沙箱重启前须杀残留 IDE 的 JBR 进程——TaskStop 只杀 gradle 管道，沙箱 IDE 进程存活会锁 prepareSandbox 文件导致下一轮构建 FAILED。
+- **执行记录**：验收 3 ✓ 首轮即过（选中连接读取链路回归正常）；验收 1/2 首轮未过、二轮修复后过——① Path 显示完整相对路径太长，DengqiMes 各行公共前缀 `springboot/app/...` 相同、差异段（模块名）在中尾部被列宽截断，区分度反降 → 显示层压缩：去除本批最长公共目录前缀 + `src/main/resources`（`src/main/webapp`）折叠为 `…` + Path 列悬停 tooltip 显示完整路径 + Path 列 320 宽/URL 列限宽，压缩后形如 `com.zhiyin.mes.app.dengqi.order/…/application-dev.properties` 可辨识；② 双击行进入单元格编辑而非选中 → DefaultTableModel 匿名子类 isCellEditable 恒 false（展示型表格），双击正常冒泡到确认逻辑。**关键约束**：`fileName` key 保持原值不动（MyProjectService.java:342 按 `app-dev.properties` 精确匹配消费），新增独立 `filePath` key 存相对路径（VfsUtilCore.getRelativePath，项目外回退全路径）。单测 22 例零回归。**附带发现（存量，已定性 2026-09-16）**：IDE 退出时 HtmlFoldingManager 报 ROOT_DISPOSABLE 未 dispose 内存泄漏告警——用户定性：存量内存泄漏告警（IDE 退出时检出），与 P1-5 改动的两个文件（对话框显示层 + finder 加 key）无关；处置：不碰 Disposer，不另立项。**（2026-09-17 更新：证据补齐后已随 2.0.31 修复，见 P1-6 执行记录附带修复③）****教训**：runIde 沙箱重启前须杀残留 IDE 的 JBR 进程——TaskStop 只杀 gradle 管道，沙箱 IDE 进程存活会锁 prepareSandbox 文件导致下一轮构建 FAILED。
 - **现状证据**：SelectDatabaseConnectionDialog.java:22-32 密码列明文；:49-57 按文件名+url+用户名+密码四元组反查选中项（脆弱）；:54 只显示文件名，dev/prod 同名文件难区分
 - **改动点**：
   1. 密码列显示 `******`，选择逻辑改 `connectionInfoList.get(table.getSelectedRow())` 直取（转换视图行索引 convertRowIndexToModel），删四元组反查
@@ -138,8 +138,9 @@
 - **测试**：runIde 验证
 - **风险**：低
 
-### P1-6 [预留 2.0.30] 导出方法按项目框架版本适配（EasyExcel / EasyExcel2）
-- [ ] 完成
+### P1-6 [预留 2.0.30→2.0.31] 导出方法按项目框架版本适配（EasyExcel / EasyExcel2）✅（2026-09-17，2.0.31）
+- [x] 完成
+- **执行记录**：反编译取证——haicheng utils jar 的 `EasyExcel2Utils` 为注入 bean、9 参实例方法 `writeExportExcel(response, sheetName, Object[] header, String[] fields, String[] fieldTypeList, String fileName, Object classObj, String methodName, Map params)`（CFR 核实，传 service bean + 方法名由框架反射重查）；Haicheng 311 处调用全走 columnMap 形态、注入字段名大写与类名同；旧 `EasyExcelUtils` 为 static。实现：Controller 模板双变体（exportFramework 缺省渲染旧写法，golden 字节级锁定）、`JavaPsiFacade.findClass` + moduleWithDependenciesAndLibrariesScope 自动探测（EDT runReadAction / 后台 runReadActionInSmartMode 双分支，dumb/异常回退旧写法 LOG.warn）、UI「导出框架」下拉默认自动；金测 caseF/G/H。验收 1 ✓（DengqiMes 自动出旧写法）；验收 2 ✓（HaichengMes order 模块自动出新写法，`mvn compile -P central,dev` 编译通过，产物 svn revert 还原——**教训**：还原前必须查目标模块 svn status，本轮误把已版本化文件当新增 rm 过一次，svn revert 即时恢复，P1-1 同款教训重犯）；EDT 断言全程 0 ✓。**随版附带修复 4 项（均 2.0.31）**：① 模板旧写法 export 调用 8 参含 fieldtype 在 DengqiMes 编译不过（dengqi 族 jar 无该重载，`String[]` 对不上 `List<Map>`——存量缺陷，历版仅字节 diff 从未编译验证；改 7 参 + golden/基线显式修订）；② 生成器底部面板布局三轮迭代（BoxLayout X 单行 11 件溢出 1200 窗宽 → WrapLayout 动态换行高度口径失稳裁半 → 终版固定两行 + pack 实测最小窗宽）；③ HtmlFoldingManager ROOT_DISPOSABLE 泄漏（P1-5 附带发现正式处置：Alarm 构造期注册 + `instanceof Disposable` 挂父对 TextEditor.getEditor() wrapper 不成立两因叠加，单会话 25 实例——initDisposables 后移 + EditorFactoryListener editorReleased 显式 Disposer.dispose + 服务 dispose() 改 Disposer.dispose 静态；终验 25→0）；④ HtmlFoldingProjectService 构造器 EDT PSI 断言（单会话 25 次）延迟 ReadAction.nonBlocking + inSmartMode；终验 25→0。**方法论沉淀**：沙箱日志同日多会话追加写，泄漏/断言计数必须按时间戳分桶归因。
 - **背景（GATE-A 答复衍生）**：用户确认导出默认生成，但不同项目框架版本的导出调用方式不同
 - **现状证据**：
   - 当前模板 BaseQueryTypeController.ftl:65-87 为旧写法：先 `service.query...List(params)` 取 rows，再 `EasyExcelUtils.writeExportExcel(response, date, header, field, fieldtype, rows, fileName, params)`——与 DengqiMes 一致（DengqiMes 全项目零 EasyExcel2Utils）
@@ -169,8 +170,9 @@
 - **风险**：低中；线程切换后 i18n 结果传递需保持生成顺序语义（columns 列表逐字段 put）
 - **关联**：P1-2（同为 EDT 阻塞治理，建议同版实施）；`docs/codegen-baseline/README.md` 已记录现象
 
-### P1-8 [预留顺延] JDBC 连接 SSL 兼容回退（老 MySQL yaSSL × JDK17）
-- [ ] 完成
+### P1-8 [预留顺延→随 2.0.31] JDBC 连接 SSL 兼容回退（老 MySQL yaSSL × JDK17）✅（2026-09-17，2.0.31）
+- [x] 完成
+- **执行记录**：HaichengMes 真实验证时复现（连接 192.168.116.9 haichengmesprod「SSL peer shut down incorrectly」），日志完整因果链 `CommunicationsException → SSLHandshakeException(Remote host terminated the handshake) → EOFException(SSL peer shut down incorrectly)` @NativeProtocol.negotiateSSLConnection——SSL 签名只在链深处，**按类沿因果链判定必须**（顶层消息不含 SSL），消息含 SSL 作兜底（误报无害：明文重试失败仍上抛原异常）。实现：`DatabaseMetadataUtil.openConnection` 统一建连入口（getTableMetadata / getTablesMetadataByNotStartPrefix 两建连点接入）——SSL 链失败 → `withSslModeDisabled` 纯函数改写 URL（已有 sslMode 原位覆盖不重复追加，`[?&]` 前缀防误伤 xsslMode 类参数）→ 明文重试一次 → 成功 LOG.warn（host:port 脱敏）/ 失败上抛**原始**异常；url 已显式 DISABLED 仍失败不重试。验收 1 ✓（HaichengMes 不改 properties 读取成功，日志「SSL 握手失败，已回退 sslMode=DISABLED 明文重连成功: 192.168.116.9:3306」实证）；验收 2 ✓（新库无 SSL 异常不触发回退，路径不变）；单测 9 例（URL 改写/异常链判定/host 提取），全量 34 例 0 失败。**收尾待办（用户侧）**：DengqiMes dev 三个 properties（iot application-dev / config app-dev / txmanage application-dev）过渡期手工加的 sslMode=DISABLED 可还原。
 - **现状证据**（2026-09-16 P1-2 复现取证实锤）：MySQL 5.7.26（yaSSL，仅支持 TLSv1/1.1）× JDK17（TLSv1/1.1 默认禁用）× Connector/J 8.2.0 默认 sslMode=PREFERRED → 服务端直接掐断握手（`SSLHandshakeException: Remote host terminated the handshake`），即 P1-1 附带发现的「选对 dev 连接仍静默失败」根因；mysql CLI 不走 TLS 故命令行手测正常。jshell 同驱动实测 `sslMode=DISABLED` 可连（server 5.7.26）；`enabledTLSProtocols=TLSv1,TLSv1.1,TLSv1.2` 救不回来（JDK disabledAlgorithms 层过滤）
 - **改动点**：
   1. DatabaseMetadataUtil 建连捕获 SSL 握手类异常（异常链含 SSLHandshakeException / "SSL" 关键字）后，url 追加（或覆盖）`sslMode=DISABLED` 自动重试一次；重试成功 LOG.warn 记录走了明文回退；仍失败才上抛原异常

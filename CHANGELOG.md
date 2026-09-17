@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+## [2.0.31] - 2026-09-17
+
+feat: 导出方法按项目框架版本适配 EasyExcel2 自动探测（codegen 改造 P1-6 + P1-8），随版修复生成器布局、模板旧写法签名、折叠翻译内存泄漏与 EDT 断言
+
+- **P1-6 导出框架适配**：Controller 模板 export 方法拆双变体，由 dataModel 的 `exportFramework` 选择。easyexcel2 新写法：`@Resource private EasyExcel2Utils EasyExcel2Utils;` 注入 + 9 参调用 `writeExportExcel(response, fileName, header, field, fieldtype, fileName, xxxService, "queryXxxList", params)`（传 service bean + 方法名由导出框架反射重查数据，签名经 CFR 反编译 haicheng 框架 jar 核实，与 HaichengMes 311 处调用同构）；exportFramework 缺省渲染旧写法（golden 字节级锁定零漂移）
+- **自动探测**：`JavaPsiFacade.findClass("com.zhiyin.service.excel.EasyExcel2Utils", moduleWithDependenciesAndLibrariesScope)`（用户触发生成动作内的一次性索引查询），EDT runReadAction / 后台 runReadActionInSmartMode 双分支，dumb mode/异常回退旧写法并 LOG.warn，绝不中断生成；生成器 UI 新增「导出框架」下拉（自动 / EasyExcel 旧 / EasyExcel2 新，默认自动可手工覆盖）
+- runIde + 真实项目验证：DengqiMes（classpath 无 EasyExcel2Utils）自动出旧写法；HaichengMes order 模块自动出新写法且 `mvn compile -P central,dev` 编译通过（验证后 svn revert 还原）；全程零 Slow operations 断言
+- **P1-8 JDBC SSL 兼容回退**：老 MySQL yaSSL（5.7.26，仅 TLSv1/1.1）× JDK17（TLSv1/1.1 默认禁用）× Connector/J 8.2.0 默认 sslMode=PREFERRED 握手被服务端掐断——DatabaseMetadataUtil 建连捕获异常链中 SSLException 系（SSLHandshakeException 等类判定 + 消息含 SSL 兜底）后以 `sslMode=DISABLED` 明文重试一次（URL 改写纯函数覆盖已有参数不重复追加），成功 LOG.warn 记录回退（host:port 脱敏），失败上抛原始异常；仅插件侧建连生效，不改用户项目配置。实测 HaichengMes 库（192.168.116.9）不改 properties 读取成功；过渡期手工加在 DengqiMes dev 三个 properties 的 sslMode=DISABLED 可还原
+- **fix 生成器窗口布局**：底部面板改固定两行（行 1 文件类型七复选框 / 行 2 Excel 导入导出 + 导出框架下拉），frame.pack() 实测最小窗宽兜底防拖窄裁切——修复新增下拉后控件溢出 1200 窗宽不可见、换行行高被裁半的问题
+- **fix 模板旧写法签名（存量缺陷）**：旧 `EasyExcelUtils.writeExportExcel` 调用去 fieldtype 参数改 7 参——dengqi 族框架 jar 实证其重载没有 fieldtype 参数，原 8 参形态 `String[]` 对不上 `List<Map>` 在 DengqiMes 编译不过（历版验收仅字节 diff 从未编译验证故未暴露）；golden 快照与 docs/codegen-baseline Controller 同步显式修订
+- **fix HtmlFoldingManager 内存泄漏**：IDE 退出报 ROOT_DISPOSABLE 未 dispose（沙箱实测单会话 25 实例）。两段根治：① Alarm 等以 this 为 parent 的 Disposer 注册从构造期挪到挂父之后的 initDisposables()（构造期注册会让无父 manager 在 ObjectTree ROOT 产生孤儿节点）；② getInstance 的 `editor instanceof Disposable` 挂父对 TextEditor.getEditor() 返回的 wrapper 实测不成立，改由 HtmlFoldingProjectService 注册 EditorFactoryListener（带 parentDisposable 重载）在 editorReleased 时显式 `Disposer.dispose`（平台告警认可的 direct dispose 模式，volatile released 防 EDT/后台竞态）；服务 dispose() 改 Disposer.dispose 静态调用（HtmlFoldingManagerDisposable 告警同源）。沙箱终验：退出泄漏告警 25 → 0
+- **fix EDT PSI 慢操作断言**：HtmlFoldingProjectService 构造器同步遍历已开文件 `PsiManager.findFile`（仅普通 runReadAction），workspace 索引未就绪时在 EDT 命中 Slow operations 断言（沙箱单会话 25 次，右键菜单等操作触发服务惰性构造时爆发）——initializeExistingFiles 延迟到 `ReadAction.nonBlocking + inSmartMode` 后台执行，与 fileOpened 监听同款机制，监听先注册无空窗。沙箱终验：断言 25 → 0
+- 单测 25 → 34（新增 DatabaseMetadataUtilSslFallbackTest 9 例：URL 改写 / SSL 异常链判定 / host 提取；金测新增 caseF/G/H 三用例：新变体 golden、缺省零漂移显式化、框架解析口径），全量 0 失败
+
 ## [2.0.30] - 2026-09-16
 
 fix: 连接选择对话框密码打码与路径可辨识（codegen 改造 P1-5），双击行即选中
@@ -304,7 +318,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.30...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.31...HEAD
+[2.0.31]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.30...v2.0.31
 [2.0.30]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.29...v2.0.30
 [2.0.29]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.28...v2.0.29
 [2.0.28]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.27...v2.0.28

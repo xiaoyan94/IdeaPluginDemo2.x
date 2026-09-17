@@ -60,9 +60,23 @@ public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
     private static final ExecutorService EXECUTOR =
             com.intellij.util.concurrency.AppExecutorUtil.createBoundedApplicationPoolExecutor("HtmlFoldingExecutor", 2);
     private final I18nCacheManager i18nCacheManager;
-    /** debounce 调度器：合并 200ms 内的多次文档/滚动变更，避免高频重建 Inlay */
-    private final Alarm scheduleAlarm = new Alarm(this);
+    /**
+     * debounce 调度器：合并 200ms 内的多次文档/滚动变更，避免高频重建 Inlay。
+     * 禁止在字段初始化处 new Alarm(this)：Alarm 构造期会 Disposer.register(manager, alarm)，
+     * 为尚未挂到 editor 的 manager 在 ObjectTree ROOT 下建节点，之后 getInstance 里
+     * Disposer.register(editor, manager) 无法收编该节点——每个 manager 连同 Alarm/
+     * MessageBus 连接/监听器滞留 ROOT 直到 IDE 退出。改由 initDisposables() 挂父后创建。
+     */
+    private Alarm scheduleAlarm;
     private static final int UPDATE_DEBOUNCE_MS = 200;
+
+    /**
+     * 显式处置标志：release()/dispose() 置位，volatile 保证跨线程可见
+     * （getInstance 在后台线程跑 handleFile，release 在 EDT 的 editorReleased 触发）。
+     * initDisposables 首行检查：若后台线程在 putUserData 之后、initDisposables 完成之前被 EDT 抢先
+     * release，继续注册子件等于向已 dispose 的父级挂 Alarm/监听（平台记错或告警），必须放弃。
+     */
+    private volatile boolean released = false;
 
     private HtmlFoldingManager(@NotNull Editor editor) {
         this.editor = editor;
@@ -86,6 +100,22 @@ public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
                 handleMouseHover(e.getMouseEvent().getPoint());
             }
         });
+
+        // 初始化 inlay（不依赖 scheduleAlarm，可留在构造期；其余 this 绑定的 Disposer 注册统一见 initDisposables）
+        updateInlays();
+    }
+
+    /**
+     * 注册所有以 this 为 parent 的 Disposer 类子件（Alarm/文档监听/滚动监听/MessageBus 连接）。
+     * 必须在 getInstance 把 manager 注册到真实父级（editor）之后调用：构造期注册会让
+     * ObjectTree 为尚未挂父的 manager 在 ROOT 下建节点，且无法被后续 register(editor, manager)
+     * 收编，形成 ROOT 孤儿（2026-09 沙箱 idea.log SEVERE 实证：Alarm 构造栈直接挂 ROOT）。
+     */
+    private void initDisposables() {
+        // 已被 release() 显式处置（后台线程构造期间 EDT 侧编辑器关闭的竞态窗口）：不再注册任何子件
+        if (released) return;
+        // debounce 调度器：合并 200ms 内的多次文档/滚动变更，避免高频重建 Inlay
+        scheduleAlarm = new Alarm(this);
 
         // 文档变化监听
         editor.getDocument().addDocumentListener(new DocumentListener() {
@@ -114,9 +144,6 @@ public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
                 }
             });
         }
-
-        // 初始化 inlay
-        updateInlays();
     }
 
     public static HtmlFoldingManager getInstance(@NotNull Editor editor) {
@@ -124,13 +151,29 @@ public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
         if (manager == null) {
             manager = new HtmlFoldingManager(editor);
             editor.putUserData(MANAGER_KEY, manager);
-            // editor 释放时级联释放 manager（清 Inlay、断 MessageBus 连接），否则每开一个文件泄漏一份。
-            // Editor 接口未直接实现 Disposable（EditorImpl 才实现），需 instanceof 判定
-            if (editor instanceof Disposable parentDisposable) {
-                Disposer.register(parentDisposable, manager);
-            }
+            // 不在此处挂父（第一轮 instanceof 方案已实测无效）：handleFile 传入的 editor 实现
+            // 类不是 Disposable，判定失败时 manager 无父，Alarm 构造注册直接钉在 ROOT（2026-09 沙箱
+            // 25 实例泄漏实证）。生命周期改由 HtmlFoldingProjectService 的 EditorFactoryListener
+            // editorReleased → release(editor) 显式处置（direct Disposer.dispose 模式）。
+            // 顺序保持：构造 → putUserData → initDisposables()，userData 先落位 release 才摘得到。
+            manager.initDisposables();
         }
         return manager;
+    }
+
+    /**
+     * 显式处置 editor 关联的 manager（平台告警认可的 direct Disposer.dispose() 模式）。
+     * Disposer.dispose 静态方法会从 ObjectTree 摘除节点并级联处置子件（Alarm/文档/滚动监听/
+     * MessageBus 连接）；直接调 m.dispose() 只清 Inlay，树节点仍滞留 ROOT → 退出期泄漏告警。
+     * 先清 userData 再 dispose：重复调用、多监听器双触发天然幂等（第二次进来已取到 null）；
+     * 他项目/无 manager 的 editor 在判空处直接返回，跨项目事件无需额外过滤。
+     */
+    public static void release(@NotNull Editor editor) {
+        HtmlFoldingManager m = editor.getUserData(MANAGER_KEY);
+        if (m != null) {
+            editor.putUserData(MANAGER_KEY, null);
+            Disposer.dispose(m);
+        }
     }
 
     /**
@@ -295,6 +338,12 @@ public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
      */
     private void scheduleUpdateInlays() {
         if (editor.isDisposed()) return;
+        // 构造与 initDisposables 之间理论无事件（本方法的两个触发监听器都在 initDisposables 里才挂上），
+        // 判空兜底：alarm 未就绪时直接同步刷新，语义不弱于 debounce 路径（最终都会 updateInlays）
+        if (scheduleAlarm == null) {
+            updateInlays();
+            return;
+        }
         scheduleAlarm.cancelAllRequests();
         scheduleAlarm.addRequest(this::updateInlays, UPDATE_DEBOUNCE_MS);
     }
@@ -365,6 +414,10 @@ public class HtmlFoldingManager implements Disposable, VisibleAreaListener {
 
     @Override
     public void dispose() {
+        // 幂等防御：重复 dispose 直接返回（clearAllInlays 对空 Map 本身也幂等，双保险）
+        if (released) return;
+        released = true;
+        // 清理 Inlay 与关联 Map（rendererMap 同步清空，防长会话累积已释放 inlay 的死条目）
         clearAllInlays();
     }
 

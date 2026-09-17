@@ -1,4 +1,6 @@
 <#include "common.ftl">
+<#-- P1-6：导出框架变体开关——缺省/旧值渲染旧写法（零字节漂移），easyexcel2 渲染新写法 -->
+<#assign exportFramework2 = (exportFramework!'easyexcel') == 'easyexcel2'>
 package com.zhiyin.controller<#if packageName?startsWith("basic")><#else>.mes</#if>.${packageName};
 
 import com.alibaba.fastjson.JSONObject;
@@ -8,11 +10,11 @@ import com.zhiyin.aspect.SysLogger;
 import com.zhiyin.controller.BaseController;
 import com.zhiyin.i18n.I18nUtil;
 <#if generateExport>
-import com.zhiyin.service.excel.EasyExcelUtils;
+import com.zhiyin.service.excel.<#if exportFramework2>EasyExcel2Utils<#else>EasyExcelUtils</#if>;
 import com.zhiyin.service.excel.ExcelExportService;
 </#if>
 import com.zhiyin.service.${packageName}.${ObjectName}Service;
-<#if generateExport>
+<#if generateExport && !exportFramework2>
 import com.zhiyin.utils.DateUtils;
 </#if>
 import com.zhiyin.utils.StringUtils;
@@ -30,13 +32,13 @@ import javax.servlet.http.HttpServletResponse;
 <#if generateImport>
 import java.io.FileInputStream;
 </#if>
-<#if generateExport>
+<#if generateExport && !exportFramework2>
 import java.util.Date;
 </#if>
 <#if generateImport>
 import java.util.HashMap;
 </#if>
-<#if generateExport>
+<#if generateExport && !exportFramework2>
 import java.util.List;
 </#if>
 import java.util.Map;
@@ -56,6 +58,11 @@ public class ${ObjectName}Controller extends BaseController {
 
     @Resource
     private ExcelExportService excelExportService;
+</#if>
+<#if generateExport && exportFramework2>
+
+    @Resource
+    private EasyExcel2Utils EasyExcel2Utils;
 </#if>
 
     @RequestMapping(value = "/${ObjectName}", method = {RequestMethod.POST, RequestMethod.GET})
@@ -89,13 +96,17 @@ public class ${ObjectName}Controller extends BaseController {
             Map<String, Object> paramap = JSONObject.parseObject(paraStr);
             params.putAll(paramap);
             String userCode = StringUtils.getStringFromMap(params, "usercode");
+<#if exportFramework2>
+            Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
+            String fileName = I18nUtil.getMessage(userCode, "${fileName}");
+            EasyExcel2Utils.writeExportExcel(response, fileName, (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), (String[]) columnMap.get("fieldtype"), fileName, ${objectName}Service, "query${ObjectName}List", params);
+<#else>
             Map<String, Object> recordMap = ${objectName}Service.query${ObjectName}List(params);
             Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
             List<Map> rows = (List<Map>) recordMap.get("rows");
             String fileName = I18nUtil.getMessage(userCode, "${fileName}");
-            EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), (String[]) columnMap.get("fieldtype"), rows, fileName, params);
-            // 之前的写法
-            // EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
+            EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
+</#if>
         } catch (Exception e) {
             logger.error("${ObjectName}Controller::export${ObjectName} catch exception:", e);
             return wrapperException(params, e, json);

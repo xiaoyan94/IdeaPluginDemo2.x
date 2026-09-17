@@ -52,6 +52,9 @@ public class DataModelGenerator {
     /** 表名安全字符集：SHOW CREATE TABLE 为字符串拼接，表名只允许字母/数字/下划线/点号（P1-2） */
     static final Pattern DB_TABLE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.]+$");
 
+    /** 底部两行子面板的行内水平间隙（FlowLayout hgap），最小窗宽余量同源取值，不写死魔法数 */
+    private static final int BOTTOM_ROW_HGAP = 10;
+
     private final JFrame frame;
     private final JTable table;
     private final DefaultTableModel tableModel;
@@ -73,6 +76,8 @@ public class DataModelGenerator {
     private JCheckBox myBatisMapperCheckBox;
     private JCheckBox excelImportCheckBox;
     private JCheckBox excelExportCheckBox;
+    // P1-6：导出框架下拉（自动 / EasyExcel 旧 / EasyExcel2 新），默认自动
+    private JComboBox<String> exportFrameworkComboBox;
     private JRadioButton dataMaintenanceRadioButton;
     private JRadioButton dataQueryRadioButton;
 
@@ -185,7 +190,9 @@ public class DataModelGenerator {
 //        buttonPanel.add(generateButton);
 
         JPanel generateTypeSelectPanel = new JPanel();
-        generateTypeSelectPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        // SOUTH 区固定结构：上行「页面功能类型 + 一键生成」band，下行文件类型固定两行——
+        // 面板首选高度恒等于两行行高之和、与窗宽无关，不再依赖动态换行的宽度敏感高度计算
+        generateTypeSelectPanel.setLayout(new BorderLayout(10, 5));
         // 添加多选框，可选择 Moc、Layout、Service、Controller、Service、Dao、MyBatisMapper
 
         // 创建一组单选框，表示“页面功能类型”，两个的单选框可选择 数据维护、记录查询
@@ -203,26 +210,43 @@ public class DataModelGenerator {
         pageTypePanel.add(dataQueryRadioButton);
 
         JBLabel label = new JBLabel("页面功能类型：");
-        generateTypeSelectPanel.add(label);
-        generateTypeSelectPanel.add(pageTypePanel);
+        JPanel pageTypeRowPanel = new JPanel();
+        // 行内不换行，拖窄防折行由 frame 最小窗宽兜底（见构造器 setMinimumSize）
+        pageTypeRowPanel.setLayout(new FlowLayout(FlowLayout.LEFT, BOTTOM_ROW_HGAP, 5));
+        pageTypeRowPanel.add(label);
+        pageTypeRowPanel.add(pageTypePanel);
 
         JPanel checkBoxPanel = createCheckBoxPanel();
         JButton generateButton = new JButton("一键生成");
         generateButton.addActionListener(e -> generateDataModel());
-        generateTypeSelectPanel.add(checkBoxPanel);
-        generateTypeSelectPanel.add(generateButton);
+        JPanel pageTypeBandPanel = new JPanel();
+        pageTypeBandPanel.setLayout(new BorderLayout(10, 0));
+        pageTypeBandPanel.add(pageTypeRowPanel, BorderLayout.WEST);
+        pageTypeBandPanel.add(generateButton, BorderLayout.EAST);
+        generateTypeSelectPanel.add(pageTypeBandPanel, BorderLayout.NORTH);
+        generateTypeSelectPanel.add(checkBoxPanel, BorderLayout.CENTER);
 
         frame.add(buttonPanel, BorderLayout.NORTH);
         frame.add(new JScrollPane(table), BorderLayout.CENTER);
         frame.add(generateTypeSelectPanel, BorderLayout.SOUTH);
-        frame.setMinimumSize(new Dimension(800, 600));
+        // 底部两行行内不折行（FlowLayout 行内折行会重现高度欠分配裁行），以最小窗宽兜底：
+        // 先 pack 让窗口取得真实装饰 insets 与最终字体度量，量取全窗首选宽
+        // （BorderLayout 取 NORTH/CENTER/SOUTH 最大行宽，天然覆盖底部两行、页面类型 band、顶部按钮栏），
+        // 加两倍行间隙余量防贴边折行后作为最小窗宽；随后恢复默认窗宽 1200x600，高度下限维持既有 600
+        frame.pack();
+        int minimumWidth = frame.getPreferredSize().width + BOTTOM_ROW_HGAP * 2;
+        frame.setSize(1200, 600);
+        frame.setMinimumSize(new Dimension(minimumWidth, 600));
     }
 
     private @NotNull JPanel createCheckBoxPanel() {
-        JPanel checkBoxPanel = new JPanel();
-        checkBoxPanel.setLayout(new BoxLayout(checkBoxPanel, BoxLayout.X_AXIS));
+        // 固定两行、行内不换行：行 1 文件类型复选框，行 2 Excel 导入/导出 + 导出框架下拉。
+        // 面板首选高度恒等于两行行高之和（与窗宽无关），SOUTH 区不会再因动态换行高度失准而裁行；
+        // 拖窄后行内折行由 frame 最小窗宽兜底（见构造器 setMinimumSize）
+        JPanel fileTypeRow = new JPanel();
+        fileTypeRow.setLayout(new FlowLayout(FlowLayout.LEFT, BOTTOM_ROW_HGAP, 5));
         JLabel checkBoxLabel = new JLabel("文件类型：");
-        checkBoxPanel.add(checkBoxLabel);
+        fileTypeRow.add(checkBoxLabel);
         mocCheckBox = new JCheckBox("Moc", true);
         layoutCheckBox = new JCheckBox("Layout", true);
         htmlCheckBox = new JCheckBox("Html", true);
@@ -233,16 +257,32 @@ public class DataModelGenerator {
         // P1-4：Excel 导入/导出链路可选——导出默认勾（产物与既有行为一致），导入默认不勾（需另行配置 Imp mapper 列定义）
         excelImportCheckBox = new JCheckBox("Excel 导入（需另行配置 Imp mapper）", false);
         excelExportCheckBox = new JCheckBox("Excel 导出", true);
+        // P1-6：导出框架选择——自动=按模块 classpath 探测 EasyExcel2Utils 定新旧写法，可手工覆盖
+        exportFrameworkComboBox = new JComboBox<>(new String[]{"自动", "EasyExcel 旧", "EasyExcel2 新"});
 
-        checkBoxPanel.add(mocCheckBox);
-        checkBoxPanel.add(layoutCheckBox);
-        checkBoxPanel.add(htmlCheckBox);
-        checkBoxPanel.add(controllerCheckBox);
-        checkBoxPanel.add(serviceCheckBox);
-        checkBoxPanel.add(daoCheckBox);
-        checkBoxPanel.add(myBatisMapperCheckBox);
-        checkBoxPanel.add(excelImportCheckBox);
-        checkBoxPanel.add(excelExportCheckBox);
+        fileTypeRow.add(mocCheckBox);
+        fileTypeRow.add(layoutCheckBox);
+        fileTypeRow.add(htmlCheckBox);
+        fileTypeRow.add(controllerCheckBox);
+        fileTypeRow.add(serviceCheckBox);
+        fileTypeRow.add(daoCheckBox);
+        fileTypeRow.add(myBatisMapperCheckBox);
+
+        JPanel excelRow = new JPanel();
+        excelRow.setLayout(new FlowLayout(FlowLayout.LEFT, BOTTOM_ROW_HGAP, 5));
+        excelRow.add(excelImportCheckBox);
+        excelRow.add(excelExportCheckBox);
+        // 「导出框架：」label 与下拉打成零间隙原子块，视觉成组
+        JPanel exportFrameworkPanel = new JPanel();
+        exportFrameworkPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        exportFrameworkPanel.add(new JLabel("导出框架："));
+        exportFrameworkPanel.add(exportFrameworkComboBox);
+        excelRow.add(exportFrameworkPanel);
+
+        JPanel checkBoxPanel = new JPanel();
+        checkBoxPanel.setLayout(new BoxLayout(checkBoxPanel, BoxLayout.Y_AXIS));
+        checkBoxPanel.add(fileTypeRow);
+        checkBoxPanel.add(excelRow);
         return checkBoxPanel;
     }
 
@@ -642,6 +682,9 @@ public class DataModelGenerator {
         paramsMap.put("myBatisMapperCheckBox", myBatisMapperCheckBox.isSelected());
         paramsMap.put("generateImport", excelImportCheckBox.isSelected());
         paramsMap.put("generateExport", excelExportCheckBox.isSelected());
+        // P1-6：导出框架（auto / easyexcel / easyexcel2），下拉默认「自动」由服务端探测解析
+        int exportFrameworkIndex = exportFrameworkComboBox.getSelectedIndex();
+        paramsMap.put("exportFramework", exportFrameworkIndex == 1 ? "easyexcel" : exportFrameworkIndex == 2 ? "easyexcel2" : "auto");
         paramsMap.put("dataMaintenanceRadioButton", dataMaintenanceRadioButton.isSelected());
         paramsMap.put("dataQueryRadioButton", dataQueryRadioButton.isSelected());
 

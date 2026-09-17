@@ -103,10 +103,85 @@ class BaseQueryTypeTemplateGoldenTest {
         assertTrue(CodeGenerateService.resolveGenerateExport(mapOf("generateExport" to true)))
     }
 
-    private fun render(templateName: String, generateImport: Boolean, generateExport: Boolean): String {
+    /**
+     * 用例 F（P1-6）：exportFramework=easyexcel2 渲染 Controller 与新 golden 快照逐字节一致，
+     * 并逐项断言新写法要点：EasyExcel2Utils 注入、9 参调用（sheetName=fileName、classObj=service、
+     * methodName="query...List"）、无 rows 预查、旧链专属 import（DateUtils/Date/List）不生成
+     */
+    @Test
+    fun caseF_easyExcel2Variant_byteEquality() {
+        val controller = render("BaseQueryTypeController.ftl", generateImport = true, generateExport = true, exportFramework = "easyexcel2")
+        assertEquals(
+            goldenText("BaseFactoryControllerEasyExcel2.java"),
+            controller,
+        )
+        // 归一 CRLF 后做语义断言（模板工作区为 CRLF）
+        val c = controller.replace("\r\n", "\n")
+        assertTrue(c.contains("import com.zhiyin.service.excel.EasyExcel2Utils;"))
+        assertFalse(c.contains("EasyExcelUtils"))
+        // 新旧共用：ExcelExportService（列定义来源）保留
+        assertTrue(c.contains("import com.zhiyin.service.excel.ExcelExportService;"))
+        assertTrue(c.contains("@Resource\n    private EasyExcel2Utils EasyExcel2Utils;"))
+        // 无 rows 预查、无旧调用痕迹
+        assertFalse(c.contains("List<Map> rows"))
+        assertFalse(c.contains("recordMap"))
+        assertFalse(c.contains("DateUtils"))
+        assertFalse(c.contains("new Date()"))
+        assertFalse(c.contains("import java.util.Date;"))
+        assertFalse(c.contains("import java.util.List;"))
+        // 9 参调用：sheetName=fileName、classObj=baseFactoryService、methodName="queryBaseFactoryList"
+        assertTrue(
+            c.contains(
+                "EasyExcel2Utils.writeExportExcel(response, fileName, (Object[]) columnMap.get(\"header\"), " +
+                    "(String[]) columnMap.get(\"field\"), (String[]) columnMap.get(\"fieldtype\"), fileName, " +
+                    "baseFactoryService, \"queryBaseFactoryList\", params);",
+            ),
+        )
+        // 查询主链不受框架变体影响
+        assertTrue(c.contains("queryBaseFactoryList"))
+    }
+
+    /**
+     * 用例 G（P1-6 缺省铁律显式化）：exportFramework 缺省（不传）时五模板渲染与既有 golden
+     * 逐字节一致（caseA 即隐含此约束，此用例单独点名），且缺省 == 显式 easyexcel
+     */
+    @Test
+    fun caseG_defaultFrameworkRendersOldStyle() {
+        for ((templateName, goldenName) in templates) {
+            assertEquals(
+                "template=$templateName golden=$goldenName",
+                goldenText(goldenName),
+                render(templateName, generateImport = true, generateExport = true),
+            )
+        }
+        val defaultCtl = render("BaseQueryTypeController.ftl", generateImport = true, generateExport = true)
+        val explicitOldCtl = render("BaseQueryTypeController.ftl", generateImport = true, generateExport = true, exportFramework = "easyexcel")
+        assertEquals(defaultCtl, explicitOldCtl)
+    }
+
+    /** 用例 H（P1-6 解析口径）：显式直通优先；auto/缺失/未知值跟随探测结果；module 不可用回退旧写法 */
+    @Test
+    fun caseH_exportFrameworkResolution() {
+        // 显式覆盖优先，探测结果不参与
+        assertEquals("easyexcel", CodeGenerateService.combineExportFramework("easyexcel", true))
+        assertEquals("easyexcel2", CodeGenerateService.combineExportFramework("easyexcel2", false))
+        // auto / 缺失 / 未知值 → 跟随探测
+        assertEquals("easyexcel2", CodeGenerateService.combineExportFramework("auto", true))
+        assertEquals("easyexcel", CodeGenerateService.combineExportFramework("auto", false))
+        assertEquals("easyexcel2", CodeGenerateService.combineExportFramework(null, true))
+        assertEquals("easyexcel", CodeGenerateService.combineExportFramework(null, false))
+        assertEquals("easyexcel2", CodeGenerateService.combineExportFramework("bogus", true))
+        // module=null（探测不可用）不抛异常：显式直通、缺省回退旧写法
+        assertEquals("easyexcel2", CodeGenerateService.resolveExportFramework(null, mapOf("exportFramework" to "easyexcel2")))
+        assertEquals("easyexcel", CodeGenerateService.resolveExportFramework(null, mapOf("exportFramework" to "auto")))
+        assertEquals("easyexcel", CodeGenerateService.resolveExportFramework(null, emptyMap()))
+        assertEquals("easyexcel", CodeGenerateService.resolveExportFramework(null, mapOf()))
+    }
+
+    private fun render(templateName: String, generateImport: Boolean, generateExport: Boolean, exportFramework: String? = null): String {
         val sw = StringWriter()
         FreeMarkerConfiguration.getConfiguration().getTemplate(templateName).process(
-            minimalDataModel(generateImport, generateExport), sw,
+            minimalDataModel(generateImport, generateExport, exportFramework), sw,
         )
         return sw.toString()
     }
@@ -117,7 +192,7 @@ class BaseQueryTypeTemplateGoldenTest {
         return String(bytes, Charsets.UTF_8)
     }
 
-    private fun minimalDataModel(generateImport: Boolean, generateExport: Boolean): Map<String, Any> {
+    private fun minimalDataModel(generateImport: Boolean, generateExport: Boolean, exportFramework: String? = null): Map<String, Any> {
         val dataGrid = linkedMapOf<String, Any>(
             "dataGridName" to "BaseFactory",
             "objectName" to "baseFactory",
@@ -128,11 +203,15 @@ class BaseQueryTypeTemplateGoldenTest {
             "queryFields" to emptyList<Any>(),
             "ckDummyColumn" to "true",
         )
-        return linkedMapOf(
+        val dataModel = linkedMapOf(
             "moduleName" to "Order",
             "dataGrids" to listOf(dataGrid),
             "generateImport" to generateImport,
             "generateExport" to generateExport,
         )
+        if (exportFramework != null) {
+            dataModel["exportFramework"] = exportFramework
+        }
+        return dataModel
     }
 }

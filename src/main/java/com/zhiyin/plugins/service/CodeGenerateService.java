@@ -5,7 +5,9 @@ import com.intellij.notification.NotificationGroupManager;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.ui.Messages;
@@ -20,6 +22,8 @@ import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.zhiyin.plugins.notification.MyPluginMessages;
 import com.zhiyin.plugins.utils.MyPropertiesUtil;
 import com.zhiyin.plugins.utils.ProjectTypeChecker;
@@ -33,11 +37,14 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.intellij.openapi.util.text.StringUtil.isEmptyOrSpaces;
 
 @Service(Service.Level.PROJECT)
 public final class CodeGenerateService {
+    private static final Logger LOG = Logger.getInstance(CodeGenerateService.class);
+
     final Project project;
 
     public CodeGenerateService(Project project) {
@@ -383,6 +390,8 @@ public final class CodeGenerateService {
         // paramsMap 缺 key 时按 UI 复选框默认兜底（导出勾、导入不勾），兼容旧调用方
         dmLayout.put("generateImport", resolveGenerateImport(paramsMap));
         dmLayout.put("generateExport", resolveGenerateExport(paramsMap));
+        // P1-6：导出框架解析——easyexcel2 项目用 EasyExcel2Utils 9 参新写法，其余保持旧 EasyExcelUtils 写法
+        dmLayout.put("exportFramework", resolveExportFramework(module, paramsMap));
 
         // Generate the XML file
         Map<String, GenerateFileResult> results = new LinkedHashMap<>();
@@ -541,6 +550,53 @@ public final class CodeGenerateService {
 
     static boolean resolveGenerateImport(Map<String, Object> paramsMap) {
         return Boolean.TRUE.equals(paramsMap.get("generateImport"));
+    }
+
+    // P1-6：导出框架解析——paramsMap 值 ∈ {auto, easyexcel, easyexcel2}；auto/缺失时探测模块 classpath
+    // 是否有 com.zhiyin.service.excel.EasyExcel2Utils，探测到用新写法、否则回退旧写法（绝不中断生成）
+    static String resolveExportFramework(Module module, Map<String, Object> paramsMap) {
+        Object configured = paramsMap == null ? null : paramsMap.get("exportFramework");
+        if ("easyexcel".equals(configured) || "easyexcel2".equals(configured)) {
+            return (String) configured;
+        }
+        return combineExportFramework(configured, detectEasyExcel2(module));
+    }
+
+    // 配置值与探测结果的组合口径（包级静态，供单测锁定 auto/缺失→探测分支语义；未知值按 auto 对待）
+    static String combineExportFramework(Object configured, boolean easyExcel2Detected) {
+        if ("easyexcel".equals(configured) || "easyexcel2".equals(configured)) {
+            return (String) configured;
+        }
+        return easyExcel2Detected ? "easyexcel2" : "easyexcel";
+    }
+
+    // EasyExcel2Utils 探测属用户触发生成动作内的一次性索引查询（非 daemon 热路径）；
+    // 线程纪律照 DatabaseConnectionFinder：EDT 用 runReadAction（不等待 smart mode），后台线程用
+    // runReadActionInSmartMode；EDT 且 dumb mode 时直接回退旧写法，不在 EDT 阻塞等待索引
+    private static boolean detectEasyExcel2(Module module) {
+        if (module == null) {
+            return false;
+        }
+        Project project = module.getProject();
+        if (ApplicationManager.getApplication().isDispatchThread() && DumbService.isDumb(project)) {
+            LOG.warn("EasyExcel2Utils 探测处于 EDT + dumb mode，回退旧导出写法");
+            return false;
+        }
+        GlobalSearchScope scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module);
+        AtomicBoolean found = new AtomicBoolean(false);
+        Runnable lookup = () -> found.set(JavaPsiFacade.getInstance(project)
+                .findClass("com.zhiyin.service.excel.EasyExcel2Utils", scope) != null);
+        try {
+            if (ApplicationManager.getApplication().isDispatchThread()) {
+                ApplicationManager.getApplication().runReadAction(lookup);
+            } else {
+                DumbService.getInstance(project).runReadActionInSmartMode(lookup);
+            }
+        } catch (Exception e) {
+            LOG.warn("EasyExcel2Utils 探测失败，回退旧导出写法", e);
+            return false;
+        }
+        return found.get();
     }
 
     // P0-2：由 private 提为包级静态，供 TableParser/CodeGenerateService 快照单测调用（无实例状态，纯函数）
