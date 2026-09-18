@@ -6,9 +6,9 @@
 
 ## 进度看板
 
-- **当前进行到**：P2-2（i18n 三语言 properties 追加生成 + 布局闭环 + 缓存即时生效修复）随 2.0.34 发版（2026-09-18）。下一项 **P2-3 菜单注册 SQL 草稿**（GATE-C 开工时归纳）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2
-- **未提交变更清单**：无（2.0.34 已随 bac8f81 提交，工作区干净）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **当前进行到**：P2-3（菜单注册 SQL 草稿，GATE-C 口径归纳 + 幂等取号 + 随版修 createDirectoryIfMissing 写动作断言）随 2.0.35 发版（2026-09-18）。下一项 **P2-4 约定外置 .zhiyin/codegen.properties**（GATE-D 开工时核对）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3
+- **未提交变更清单**：无（2.0.35 已随本次 feat 提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -231,8 +231,9 @@
 - **测试**：需真实验证 + 单测覆盖（escape 转换、幂等判重、翻译失败降级）
 - **风险**：中；编码/转义是主要坑，靠单测锁
 
-### P2-3 [预留] 菜单注册 SQL 草稿
-- [ ] 完成
+### P2-3 [预留] 菜单注册 SQL 草稿 ✅（2026-09-18，2.0.35）
+- [x] 完成
+- **执行记录**：GATE-C 用 dengqimesv3 真实数据归纳（四表列语义/三语言实证/公共按钮 i18n id 75·80·84·454/pagei18nid=661/号段参考 menu 1666·fun 4036·i18n 共享段 7003），三个分叉用户拍板：按钮跟勾选项联动、**ID 用幂等查 MAX 的 SQL 动态取号**（不连库、重跑不插孤儿——fun 行 FROM sys_menu 按 code 反查 PID + NOT EXISTS 按 PID+CODE 判重，type 行按 KEY 反查 + 按 PID+TYPE 判重，pid/seq 留 /* TODO */）、菜单名翻译复用百度。开发委托子代理（开发→编译→单测），主会话独立复跑 73 例 0 失败；同构比对：golden 渲染 vs 库内 PartWarehouse 真实记录逐字段核对 ✓；插件零 JDBC 调用（只渲染模板写文件）✓。真实验证（用户，HaichengMes biz_base_factory GridName=BaseFactory，菜单中文名=工厂台账）：草稿四表同构、zh_TW/en_US 翻译回填（工廠台賬/Factory ledger）、sql 目录自动创建、P2-2 确认追加流程共存正常、幂等重跑跳过。**首轮 runIde 撞出并随版修复**：`VfsUtil.createDirectoryIfMissing` 裸调于 EDT 抛 Write access 断言、被 catch 吞成「无法生成件」弹窗（该 API 在 2024.3 **不自带 write action**——主会话代码审查时误判其自带，实测打脸后按 MyProjectService 先例包 `WriteCommandAction.writeCommandAction().run()` 修复）。单测 68 → 73（MenuSqlTemplateGoldenTest 5 例）。**教训**：① 杀沙箱必须**按命令行定位**（gradle 起的沙箱 IDE 是独立 java.exe，按 ideaIU64.exe 进程名查会漏，TaskStop 只杀 gradle 管道）——否则 prepareSandbox 撞 jar 内存映射锁 FAILED；② 验证产物再次被 SVN 自动 add 进用户业务 changelist（设备OEE），清理前必须先核 diff 行归属（本次 standard_*_min 三行转义变化系用户存量改动，行级保留）。
 - **前置（GATE-C）**：从 DengqiMes 库或既有上库 SQL 抽「菜单 4 表 + i18n」insert 真实样例（口径见 mes-report-dev / mes-dict-create skill），确定表名、必填列、ID 分配策略，产出模板字段清单交用户确认
 - **改动点**：
   1. 新增 menu.sql.ftl：页面菜单 + 按钮权限 + i18n 三语言 insert，ID 位留 TODO 占位
@@ -389,7 +390,7 @@
 |------|------|--------|------|
 | GATE-A | 导出方法默认生成还是做成开关 | P1-4 | ✅ 已确认：导出默认生成；框架版本适配独立成 P1-6 |
 | GATE-B | i18n key 前缀/后缀规则 | P2-1 → P2-2 | ✅ 已确认：`<模块 i18n 前缀>.<gridName 小写>grid?.<field>`；P2-1 保留只读核对 |
-| GATE-C | 菜单 4 表 insert 真实样例与 ID 策略 | P2-3 | 待办（P2-3 开工时归纳） |
+| GATE-C | 菜单 4 表 insert 真实样例与 ID 策略 | P2-3 | ✅ 已确认（2026-09-18，dengqimesv3 实证）：四表 `sys_menu`(code=页面名/useflag=1/icon-blank/i18ntype='zh_CN'/functionurl=./<folder>/<ObjectName>) + `sys_menu_fun`(ID=FID 全局号、PID=菜单id、pagei18nid=661、公共按钮复用 i18n id) + `sys_res_i18n`(KEY=`com.zhiyin.mes.menu.<蛇形>` 反引号、TYPE=menu、maintainer='zhiyin') + `sys_res_i18n_type`(**三语言** zh_CN/zh_TW/en_US，ID 与 i18n 表共享全局号段)；按钮集合跟勾选项联动（默认刷新75+导出80，勾导入加导出模板84+导入454）；**ID 用幂等查 MAX 的 SQL 动态取号**（fun 行 INSERT...SELECT FROM sys_menu 按 code 反查 PID 防孤儿、NOT EXISTS 按 PID+CODE 判重；type 行按 KEY 反查、按 PID+TYPE 判重），pid/seq 留 TODO 人工填；菜单名 zh_TW/en_US 百度翻译自动填、失败 TODO。号段参考（取证时）：menu 1666 / fun 4036 / i18n 共享段 7003 |
 | GATE-D | DengqiMes sys 模块（sys.dengqi.auth/home）Controller/Moc 实际目录口径 | P2-4 | 待办（P2-4 开工时核对） |
 | GATE-E | Moc XML type 词表（统计真实项目既有值） | P2-5 | 待办（P2-5 开工时统计） |
 | GATE-F | Layout 中实际出现的 easyuiClass 枚举清单 | P3-1 | 待办（P3-1 开工时 grep） |

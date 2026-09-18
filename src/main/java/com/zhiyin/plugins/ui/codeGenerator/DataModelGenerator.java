@@ -80,6 +80,8 @@ public class DataModelGenerator {
     private JCheckBox excelExportCheckBox;
     // P1-6：导出框架下拉（自动 / EasyExcel 旧 / EasyExcel2 新），默认自动
     private JComboBox<String> exportFrameworkComboBox;
+    // P2-3：菜单注册 SQL 草稿可选产物（纯文本草稿，插件不执行任何 SQL、不连库）
+    private JCheckBox menuSqlCheckBox;
     private JRadioButton dataMaintenanceRadioButton;
     private JRadioButton dataQueryRadioButton;
 
@@ -280,6 +282,9 @@ public class DataModelGenerator {
         exportFrameworkPanel.add(new JLabel("导出框架："));
         exportFrameworkPanel.add(exportFrameworkComboBox);
         excelRow.add(exportFrameworkPanel);
+        // P2-3：菜单注册 SQL 草稿可选产物，默认不勾（勾选后生成 src/main/resources/sql/<ObjectName>_menu_draft.sql）
+        menuSqlCheckBox = new JCheckBox("菜单 SQL（草稿）", false);
+        excelRow.add(menuSqlCheckBox);
 
         JPanel checkBoxPanel = new JPanel();
         checkBoxPanel.setLayout(new BoxLayout(checkBoxPanel, BoxLayout.Y_AXIS));
@@ -664,6 +669,37 @@ public class DataModelGenerator {
                     }
                 }
         );
+        // P2-3：菜单 SQL 草稿勾选时先问菜单中文名（sys_menu.name 与 i18n 中文值）；取消输入则整个生成中止
+        final String menuNameZh;
+        if (menuSqlCheckBox.isSelected()) {
+            String menuNameInput = Messages.showInputDialog(
+                    project,
+                    "菜单中文名（sys_menu.name 与 i18n 中文值）：",
+                    "菜单 SQL 草稿",
+                    Messages.getQuestionIcon(),
+                    "",
+                    new InputValidatorEx() {
+                        @Override
+                        public @NlsContexts.DetailedDescription @Nullable String getErrorText(@NonNls String inputString) {
+                            if (inputString.contains(" ")) {
+                                return "菜单中文名不能包含空格";
+                            }
+                            if (inputString.length() > 64) {
+                                return "菜单中文名不能超过64个字符";
+                            }
+                            return isEmptyOrSpaces(inputString) ? "菜单中文名不能为空" : null;
+                        }
+                    }
+            );
+            if (menuNameInput == null) {
+                // 取消输入 → 整个生成中止（照 tableName 为空的中止模式）
+                MyPluginMessages.showWarning("无法继续生成", "已取消菜单中文名输入，本次生成中止", project);
+                return;
+            }
+            menuNameZh = menuNameInput;
+        } else {
+            menuNameZh = null;
+        }
 //        service.generateModelByFields(this.module, folder, modelName, this.tableName, this.fields);
         /*if(mocCheckBox.isSelected()){
             service.generateMocFile(this.module, folder, modelName, this.tableName, this.fields);
@@ -687,6 +723,9 @@ public class DataModelGenerator {
         // P1-6：导出框架（auto / easyexcel / easyexcel2），下拉默认「自动」由服务端探测解析
         int exportFrameworkIndex = exportFrameworkComboBox.getSelectedIndex();
         paramsMap.put("exportFramework", exportFrameworkIndex == 1 ? "easyexcel" : exportFrameworkIndex == 2 ? "easyexcel2" : "auto");
+        // P2-3：菜单注册 SQL 草稿勾选标志 + 菜单中文名（zh_TW/en_US 翻译结果由后台任务完成后回填进 paramsMap）
+        paramsMap.put("menuSqlCheckBox", menuSqlCheckBox.isSelected());
+        paramsMap.put("menuNameZh", menuNameZh);
         paramsMap.put("dataMaintenanceRadioButton", dataMaintenanceRadioButton.isSelected());
         paramsMap.put("dataQueryRadioButton", dataQueryRadioButton.isSelected());
 
@@ -694,9 +733,26 @@ public class DataModelGenerator {
         // comment 的命中结果，EDT 只消费；命中语义与逐字段现查完全一致
         new Task.Backgroundable(project, "分析字段 i18n", false) {
             private Map<String, List<Property>> i18nByComment = Collections.emptyMap();
+            // P2-3：菜单名翻译结果（后台线程网络 IO；失败保持空串，模板渲染 TODO 形态兜底，不中断生成）
+            private String menuNameTw = "";
+            private String menuNameEn = "";
 
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
+                // P2-3：菜单名 zh_TW/en_US 照 P2-2 调用方式（from=auto，cht/en）在后台线程翻译
+                if (menuSqlCheckBox.isSelected() && menuNameZh != null) {
+                    BaiduTranslator translator = ApplicationManager.getApplication().getService(BaiduTranslator.class);
+                    try {
+                        menuNameTw = translator.translate(menuNameZh, "auto", "cht");
+                    } catch (Exception ex) {
+                        LOG.info("菜单名翻译 zh_TW 失败：" + ExceptionUtil.getMessage(ex));
+                    }
+                    try {
+                        menuNameEn = translator.translate(menuNameZh, "auto", "en");
+                    } catch (Exception ex) {
+                        LOG.info("菜单名翻译 en_US 失败：" + ExceptionUtil.getMessage(ex));
+                    }
+                }
                 if (!dataQueryRadioButton.isSelected()) {
                     return;
                 }
@@ -713,6 +769,9 @@ public class DataModelGenerator {
             @Override
             public void onSuccess() {
                 // Task.Backgroundable#onSuccess 在 EDT 执行：只消费预查结果，不再触发索引查询
+                // P2-3：后台翻译好的菜单名回填 paramsMap，供 generateBaseQueryTypeFile 的菜单 SQL 分支消费
+                paramsMap.put("menuNameTw", menuNameTw);
+                paramsMap.put("menuNameEn", menuNameEn);
                 if (dataQueryRadioButton.isSelected()) {
                     // P2-2：纯逻辑计算缺失清单（复用预查结果，无索引/PSI 查询）；无缺失时零行为变化（直接生成，不弹窗）
                     CodeGenerateService.I18nMissingSummary missingSummary = CodeGenerateService.collectI18nMissingSummary(

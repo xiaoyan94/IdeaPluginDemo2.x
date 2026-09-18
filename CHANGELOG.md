@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [2.0.35] - 2026-09-18
+
+feat: 菜单注册 SQL 草稿（codegen 改造 P2-3）——勾选后随生成产出四表幂等 insert 草稿，插件不执行任何 SQL、不连库
+
+- **GATE-C 口径（dengqimesv3 真实数据归纳）**：一条查询页菜单 = `sys_menu` 1 行（code=页面名、useflag=1、icon-blank、i18ntype='zh_CN'、functionurl=./<folder>/<ObjectName>）+ `sys_menu_fun` 按钮行（ID=FID 全局号、PID=菜单id、GROUPNAME=ToolBar、pagei18nid=661）+ `sys_res_i18n` 1 行（KEY=`com.zhiyin.mes.menu.<蛇形名>` 保留字反引号、TYPE=menu、maintainer='zhiyin'）+ `sys_res_i18n_type` 三语言 3 行（zh_CN/zh_TW/en_US，ID 与 sys_res_i18n 共享全局号段）
+- **按钮集合跟勾选项联动**：默认仅刷新(i18n 75)+导出(80)；勾「Excel 导入」加导出(模板)(84)+导入(454)——公共按钮 i18n id 全部复用全局既有值，草稿零新增按钮 i18n 行，与生成产物的 import/export 能力精确对齐
+- **幂等取号 SQL**：各表 ID 位不用字面 TODO、不连库取号，而是 MySQL 用户变量查当前 MAX+1（i18n 起点 GREATEST(两表 MAX)+1 对应共享号段）；防孤儿设计——fun 行 PID 经 `FROM sys_menu` 按 code 反查真实菜单 id + NOT EXISTS 按 PID+CODE 判重，type 行 PID 经 sys_res_i18n 按 KEY 反查 + 按 PID+TYPE 判重，重跑自动跳过已插入行；父菜单 pid 与 seq 留 `/* TODO */` 注释人工填
+- **交互**：UI 加「菜单 SQL（草稿）」复选框（默认不勾）；勾选后生成时新增「菜单中文名」输入（sys_menu.name 与 zh_CN 值），取消输入整体中止；菜单名 zh_TW/en_US 复用百度翻译后台自动回填（失败渲染 TODO 形态不中断）；输出到模块 `src/main/resources/sql/<ObjectName>_menu_draft.sql`（目录不存在自动创建），文件头注明草稿语义；结果并入 P1-1 汇总通知
+- **随版修复（HaichengMes runIde 验收实证）**：`VfsUtil.createDirectoryIfMissing` 建目录属 VFS 写操作，EDT 上裸调抛 Write access 断言被 catch 吞成「无法生成件」弹窗——照 MyProjectService 先例包 `WriteCommandAction.writeCommandAction().run()`（2024.3 实测该 API 不自带 write action）
+- 单测 68 → 73（MenuSqlTemplateGoldenTest 5 例：默认/勾导入按钮集 golden、翻译缺失 TODO、幂等判重形态、驼峰转蛇形），全量 0 失败
+- 验证（HaichengMes order 模块，biz_base_factory，GridName=BaseFactory，菜单中文名=工厂台账）：草稿与 DengqiMes 既有菜单 insert 逐字段同构（人工比对 PartWarehouse 真实记录）；zh_TW/en_US 翻译回填（工廠台賬/Factory ledger）；P2-2 确认追加流程共存正常；验证产物已清理（用户设备OEE 业务改动保留未动）
+
 ## [2.0.34] - 2026-09-18
 
 feat: i18n 三语言 properties 追加生成（codegen 改造 P2-2）——缺失 key 确认后写入模块三语言 datagrid properties，布局 Title 闭环，随版修复 i18n 缓存不含未保存追加内容
@@ -349,7 +361,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.34...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.35...HEAD
+[2.0.35]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.34...v2.0.35
 [2.0.34]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.33...v2.0.34
 [2.0.33]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.32...v2.0.33
 [2.0.32]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.31...v2.0.32

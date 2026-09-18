@@ -20,6 +20,7 @@ import com.intellij.notification.Notifications;
 import com.intellij.openapi.vcs.changes.ChangeListManager;
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.JavaPsiFacade;
@@ -424,6 +425,20 @@ public final class CodeGenerateService {
         dmLayout.put("generateExport", resolveGenerateExport(paramsMap));
         // P1-6：导出框架解析——easyexcel2 项目用 EasyExcel2Utils 9 参新写法，其余保持旧 EasyExcelUtils 写法
         dmLayout.put("exportFramework", resolveExportFramework(module, paramsMap));
+        // P2-3：菜单注册 SQL 草稿可选产物——dmLayout 附加菜单字段（插件只生成草稿，绝不执行任何 SQL、不连库）；
+        // 菜单名翻译由 DataModelGenerator 后台任务完成后经 paramsMap 传入，缺失（null/空）时模板渲染 TODO 形态兜底
+        boolean menuSqlEnabled = Boolean.TRUE.equals(paramsMap.get("menuSqlCheckBox"));
+        if (menuSqlEnabled) {
+            Object menuNameZh = paramsMap.get("menuNameZh");
+            Object menuNameTw = paramsMap.get("menuNameTw");
+            Object menuNameEn = paramsMap.get("menuNameEn");
+            dmLayout.put("menuNameZh", menuNameZh == null ? "" : menuNameZh.toString());
+            dmLayout.put("menuNameTw", menuNameTw == null ? "" : menuNameTw.toString());
+            dmLayout.put("menuNameEn", menuNameEn == null ? "" : menuNameEn.toString());
+            dmLayout.put("menuFolder", folder);
+            dmLayout.put("menuSnakeKey", toSnakeCase(modelName));
+            dmLayout.put("menuButtons", buildMenuButtons(resolveGenerateImport(paramsMap)));
+        }
 
         // Generate the XML file
         Map<String, GenerateFileResult> results = new LinkedHashMap<>();
@@ -461,6 +476,21 @@ public final class CodeGenerateService {
             }
             if ((Boolean) paramsMap.get("myBatisMapperCheckBox")) {
                 results.put(outputFileName + "Mapper.xml", generateXmlFile(project, module, dmLayout, "BaseQueryTypeMapper.ftl", outputSourceContentMapperPath, outputFileName + "Mapper.xml"));
+            }
+            // P2-3：菜单注册 SQL 草稿——输出 src/main/resources/sql/<ObjectName>_menu_draft.sql；
+            // 该目录通常不存在，先 VFS 建目录再走通用生成（不改 generateXmlFile 通用逻辑，其他产物路径语义不变），
+            // 结果照常进 results 参与汇总通知
+            if (menuSqlEnabled) {
+                VirtualFile contentRoot = findModuleContentRoot(module);
+                if (contentRoot != null) {
+                    // P2-3 修复：createDirectoryIfMissing 的 VFS 建目录属写操作，EDT 上必须包
+                    // write-action（2024.3 实测裸调抛 Write access is allowed inside write-action only，
+                    // 被本方法 catch 吞成「无法生成件」弹窗）；照 MyProjectService#createDictionariesDir 先例
+                    WriteCommandAction.writeCommandAction(project).run(() ->
+                            VfsUtil.createDirectoryIfMissing(contentRoot, "src/main/resources/sql"));
+                }
+                results.put(outputFileName + "_menu_draft.sql",
+                        generateXmlFile(project, module, dmLayout, "menu.sql.ftl", "src/main/resources/sql", outputFileName + "_menu_draft.sql"));
             }
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
@@ -667,6 +697,58 @@ public final class CodeGenerateService {
             return (String) configured;
         }
         return easyExcel2Detected ? "easyexcel2" : "easyexcel";
+    }
+
+    // P2-3：ObjectName 驼峰转蛇形小写（BaseFactory→base_factory、PartWarehouse→part_warehouse、
+    // OrderSchedule→order_schedule），用于 sys_res_i18n 的 KEY 段 com.zhiyin.mes.menu.<snake>；
+    // 连续大写按「后续紧跟小写才断词」收敛（ABCTest→abc_test），包级静态供单测锁定
+    static String toSnakeCase(String name) {
+        if (name == null || name.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        char[] chars = name.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            char c = chars[i];
+            if (Character.isUpperCase(c)) {
+                // 大写字母前补下划线：前一个字符是小写（aB 断词）或下一个字符是小写（ABc 断词），首字母除外
+                boolean prevLowerOrDigit = i > 0 && !Character.isUpperCase(chars[i - 1]);
+                boolean nextLower = i + 1 < chars.length && !Character.isUpperCase(chars[i + 1]);
+                if (i > 0 && (prevLowerOrDigit || nextLower)) {
+                    sb.append('_');
+                }
+                sb.append(Character.toLowerCase(c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    // P2-3：菜单按钮集合与勾选项联动（DengqiMes 实证口径）——默认仅刷新+导出；
+    // generateImport=true 时插入导出(模板)+导入，SEQ 顺序：刷新0、导出(模板)1、导入2、导出3
+    // （不勾导入则刷新0、导出1）；公共按钮 i18n id 复用全局既有值（75/80/84/454），不生成按钮 i18n 行
+    static List<Map<String, Object>> buildMenuButtons(boolean generateImport) {
+        List<Map<String, Object>> buttons = new ArrayList<>();
+        buttons.add(menuButton("刷新", "icon-reload", "Refresh", 0, 75));
+        if (generateImport) {
+            buttons.add(menuButton("导出(模板)", "icon-export", "downloadTemplate", 1, 84));
+            buttons.add(menuButton("导入", "icon-import", "Import", 2, 454));
+            buttons.add(menuButton("导出", "icon-export", "Export", 3, 80));
+        } else {
+            buttons.add(menuButton("导出", "icon-export", "Export", 1, 80));
+        }
+        return buttons;
+    }
+
+    private static Map<String, Object> menuButton(String fname, String icon, String code, int seq, int i18nid) {
+        Map<String, Object> button = new LinkedHashMap<>();
+        button.put("fname", fname);
+        button.put("icon", icon);
+        button.put("code", code);
+        button.put("seq", seq);
+        button.put("i18nid", i18nid);
+        return button;
     }
 
     // EasyExcel2Utils 探测属用户触发生成动作内的一次性索引查询（非 daemon 热路径）；
