@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [2.0.34] - 2026-09-18
+
+feat: i18n 三语言 properties 追加生成（codegen 改造 P2-2）——缺失 key 确认后写入模块三语言 datagrid properties，布局 Title 闭环，随版修复 i18n 缓存不含未保存追加内容
+
+- **确认后追加（口径已确认）**：生成前缺失清单升级为可编辑确认对话框（`I18nAppendConfirmDialog`，替换 P2-1 只读报告）——字段名/拟生成 key 只读，zh_CN（预填 comment）/zh_TW/en_US（预填百度翻译）三列可编辑；「追加并生成」写 properties + 布局 i18nKey 用新 key 闭环，「直接生成」/Esc/关闭保持裸中文回退；翻译后台 Task 串行调 BaiduTranslator（auto→cht/en），开头连续 3 字段失败快速放弃（断网不等几十次超时），翻译失败格可手填、确认时仍空则该语言文件追加 `# TODO: translate: <key>` 注释行
+
+- **只追加绝不修改**：按 key 判重（后台预读 key 集合 + 写时 findPropertyByKey 双查），已存在跳过，重跑 +0 行；TODO 注释行按文件文本判重幂等；写入走 PSI addProperty + WriteCommandAction，写后 fileDirty + VFS 刷新 + I18nCacheManager 重载 + inlay 刷新；追加统计并入 P1-1 汇总通知（zh_CN +N、zh_TW +N、en_US +N、跳过已存在 M）
+- **dsp 约定字段对齐真实项目惯例**：字段名精确 state/status/type 时三语言顺带补 `<field>dsp` key（值同原字段；实证 state/statedsp、type/typedsp、status/statusdsp 三对，RoutingTypeDsp 复用原 key 属反例不扩大）；无 comment 的这三个字段以默认标题「状态」/「类型」进确认清单；模板 dsp 显示列 Title 改 `${column.dspKey!column.i18nKey!column.name}` 优先用专属 key
+- **随版修复（HaichengMes 验收实证）**：`I18nCacheManager.loadSingleFile` 原用 `VfsUtilCore.loadText`（VFS 层）读文件，而 PSI addProperty 的修改只落 Document、WriteCommandAction 不触发 save、VFS_CHANGES 不发——追加后缓存重装载的是旧内容，折叠/inlay/悬浮对新增 key 全部不生效；改为优先读 cached Document（`FileDocumentManager.getCachedDocument`），无缓存才走 loadText，listener 路径行为不变
+- 单测 48 → 68（I18nGenerateServiceTest 20 例：dsp 派生/默认标题/TODO 判重/幂等过滤/转义/快速失败/摘要；collectI18nMissingSummary 默认标题进清单 2 例），全量 0 失败
+- 验证（HaichengMes order 模块，biz_base_factory，GridName=BaseFactory）：确认追加三语言各 +22 行只有新增行；status（无 comment）以默认标题「状态」进清单，statusdsp 列 Title 用专属 key、properties 双 key 追加；生成完立即打开 Layout 折叠/inlay/悬浮即时生效（缓存修复实证）；幂等重跑 +0 行；验证产物已清理（用户业务 changelist 未受影响）
+
 ## [2.0.33] - 2026-09-17
 
 feat: i18n 缺失分析报告（只读，codegen 改造 P2-1）——生成完成后弹缺失清单：字段名 → 拟生成 key → 拟中文值，为 P2-2 三语言追加生成对口径
@@ -337,7 +349,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.33...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.34...HEAD
+[2.0.34]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.33...v2.0.34
 [2.0.33]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.32...v2.0.33
 [2.0.32]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.31...v2.0.32
 [2.0.31]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.30...v2.0.31

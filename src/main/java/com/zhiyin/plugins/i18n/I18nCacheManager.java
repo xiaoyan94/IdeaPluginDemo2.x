@@ -2,6 +2,8 @@ package com.zhiyin.plugins.i18n;
 
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleUtilCore;
@@ -269,7 +271,12 @@ public final class I18nCacheManager {
         String lang = extractLanguage(file.getName());
 
         try {
-            String text = VfsUtilCore.loadText(file);
+            // P2-2 修复：优先读缓存中的 Document——PSI 写入（addProperty 等 WriteCommandAction 内修改）
+            // 只落 Document，未 save 前对 loadText（VFS 层）不可见，也不触发 VFS_CHANGES，
+            // 导致生成器追加 key 后缓存重载仍读到旧内容、折叠/inlay/悬浮不生效（HaichengMes 验收实证）。
+            // getCachedDocument 任意线程安全：只查缓存 map，未打开/未修改的文件返回 null 走 loadText。
+            Document cachedDocument = FileDocumentManager.getInstance().getCachedDocument(file);
+            String text = cachedDocument != null ? cachedDocument.getText() : VfsUtilCore.loadText(file);
             Properties props = new Properties();
             props.load(new java.io.StringReader(text));
 

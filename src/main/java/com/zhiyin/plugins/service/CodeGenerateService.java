@@ -25,13 +25,13 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.zhiyin.plugins.notification.MyPluginMessages;
-import com.zhiyin.plugins.ui.codeGenerator.I18nMissingReportDialog;
 import com.zhiyin.plugins.utils.MyPropertiesUtil;
 import com.zhiyin.plugins.utils.ProjectTypeChecker;
 import com.zhiyin.plugins.utils.StringUtil;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -184,7 +184,7 @@ public final class CodeGenerateService {
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
         } finally {
-            notifyGenerateSummary(results);
+            notifyGenerateSummary(results, null);
         }
     }
 
@@ -283,7 +283,7 @@ public final class CodeGenerateService {
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
         } finally {
-            notifyGenerateSummary(results);
+            notifyGenerateSummary(results, null);
         }
     }
 
@@ -291,8 +291,14 @@ public final class CodeGenerateService {
      * P1-7：i18nByComment 为后台预查好的「字段 comment → DataGrid i18n 命中」结果（见
      * MyPropertiesUtil#findModuleDataGridI18nPropertiesByValueBatch 与 DataModelGenerator#generateDataModel），
      * 本方法在 EDT 上被调用，不再直接做索引反查。
+     * <p>P2-2：confirmedI18nByField 为确认对话框「追加并生成」读回的「字段 name → 拟生成 key + 三语言确认值」，
+     * 这些字段按新 key 闭环布局 Title 的 i18nKey（模板 ${column.i18nKey!column.chs!column.name}）；
+     * i18nAppendContext 为后台翻译阶段定位好的三语言 datagrid 文件与现有 key 集合，产物生成后据此追加写
+     * properties，追加统计并入汇总通知。两参为 null（无缺失 / 直接生成）时行为与 P2-1 前完全一致。</p>
      */
-    public void generateBaseQueryTypeFile(Module module, String folder, String modelName, String fileName, String sql, List<Map<String, Object>> fields, Map<String, Object> paramsMap, Map<String, List<Property>> i18nByComment) {
+    public void generateBaseQueryTypeFile(Module module, String folder, String modelName, String fileName, String sql, List<Map<String, Object>> fields, Map<String, Object> paramsMap, Map<String, List<Property>> i18nByComment,
+                                          @Nullable Map<String, I18nGenerateService.I18nConfirmedAppend> confirmedI18nByField,
+                                          @Nullable I18nGenerateService.I18nDatagridAppendContext i18nAppendContext) {
         if (project == null) {
             Messages.showErrorDialog("Project is not available", "Error");
             return;
@@ -327,31 +333,44 @@ public final class CodeGenerateService {
         dataGrid1.put("ckDummyColumn", "true");
         List<Map<String, Object>> columns = new ArrayList<>(fields);
         Map<String, List<Property>> precomputedI18n = i18nByComment == null ? Collections.emptyMap() : i18nByComment;
-        // P2-1：命中/缺失计数与缺失清单（字段名 → 拟生成 key → 拟中文值），生成完成后弹只读报告
-        int i18nHitCount = 0;
-        int i18nMissCount = 0;
-        List<I18nMissingEntry> i18nMissingEntries = new ArrayList<>();
+        // P2-2：确认追加的字段按拟生成 key 闭环（chs/cht/eng 用对话框编辑后的值，空值不写保持模板回退）；
+        // 命中/缺失计数与缺失清单收集上移到 collectI18nMissingSummary（确认弹窗已前置到生成之前）
         for (Map<String, Object> field : columns) {
             field.put("chs", field.get("comment"));
+            String fieldName = String.valueOf(field.get("name"));
+            I18nGenerateService.I18nConfirmedAppend confirmed = confirmedI18nByField == null
+                    ? null : confirmedI18nByField.get(fieldName);
+            if (confirmed != null) {
+                field.put("i18nKey", confirmed.key());
+                // P2-2 修复：dsp 约定字段顺带闭环 dspKey（模板 dsp 显示列 Title 的
+                // ${column.dspKey!column.i18nKey!column.name} 兜底链首选项），与 properties
+                // 追加的 <field>dsp key 对应；命中既有 key 的字段 dsp 列复用 i18nKey（现状）
+                if (I18nGenerateService.isDspField(fieldName)) {
+                    field.put("dspKey", confirmed.key() + "dsp");
+                }
+                if (!isEmptyOrSpaces(confirmed.zhCn())) {
+                    field.put("chs", confirmed.zhCn());
+                }
+                if (!isEmptyOrSpaces(confirmed.zhTw())) {
+                    field.put("cht", confirmed.zhTw());
+                }
+                if (!isEmptyOrSpaces(confirmed.enUs())) {
+                    field.put("eng", confirmed.enUs());
+                }
+                continue;
+            }
             Object commentObj = field.get("comment");
             String comment = commentObj == null ? null : commentObj.toString();
             List<Property> properties = comment == null
                     ? Collections.emptyList()
                     : precomputedI18n.getOrDefault(comment, Collections.emptyList());
-            boolean i18nMatched = !properties.isEmpty();
-            if (i18nMatched) {
-                i18nHitCount++;
+            if (!properties.isEmpty()) {
                 field.put("i18nKey", properties.get(0).getKey());
                 field.put("chs", properties.get(0).getValue());
                 if (properties.size() > 2) {
                     field.put("cht", properties.get(1).getValue());
                     field.put("eng", properties.get(2).getValue());
                 }
-            } else if (isI18nMissingReportable(comment, i18nMatched)) {
-                i18nMissCount++;
-                String fieldName = String.valueOf(field.get("name"));
-                i18nMissingEntries.add(new I18nMissingEntry(fieldName,
-                        buildProposedI18nKey(module.getName(), modelName, fieldName), comment));
             }
         }
         dataGrid1.put("columns", columns);
@@ -446,13 +465,15 @@ public final class CodeGenerateService {
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
         } finally {
-            notifyGenerateSummary(results);
-        }
-        // P2-1：缺失清单非空才弹只读报告（本方法在 Task.Backgroundable#onSuccess 的 EDT 上被调用，
-        // 弹窗安全；空清单不弹，避免噪音）
-        if (!i18nMissingEntries.isEmpty()) {
-            new I18nMissingReportDialog(MyPropertiesUtil.deriveI18nKeyPrefix(module.getName()),
-                    module.getName(), i18nHitCount, i18nMissCount, i18nMissingEntries).show();
+            // P2-2：确认追加路径——产物生成后写模块三语言 datagrid properties（幂等只追加），
+            // 追加统计拼接进汇总通知；直接生成路径 summary 为 null，通知形态与之前完全一致
+            String i18nAppendSummary = null;
+            if (confirmedI18nByField != null && !confirmedI18nByField.isEmpty()) {
+                I18nGenerateService.I18nAppendResult appendResult = project.getService(I18nGenerateService.class)
+                        .appendConfirmedEntries(module, i18nAppendContext, confirmedI18nByField.values());
+                i18nAppendSummary = appendResult.toSummarySuffix();
+            }
+            notifyGenerateSummary(results, i18nAppendSummary);
         }
     }
 
@@ -515,8 +536,9 @@ public final class CodeGenerateService {
         return GenerateFileResult.SUCCESS;
     }
 
-    // P1-1：生成结束后一次汇总通知（成功/已存在跳过/目录不存在跳过），替代原先的逐文件弹窗与成功通知
-    private void notifyGenerateSummary(Map<String, GenerateFileResult> results) {
+    // P1-1：生成结束后一次汇总通知（成功/已存在跳过/目录不存在跳过），替代原先的逐文件弹窗与成功通知；
+    // P2-2：i18nAppendSummary 非 null 时拼接在消息末尾（如「；i18n 追加：zh_CN +N、zh_TW +N、en_US +N、跳过已存在 M」）
+    private void notifyGenerateSummary(Map<String, GenerateFileResult> results, @Nullable String i18nAppendSummary) {
         if (results.isEmpty()) {
             return;
         }
@@ -548,6 +570,9 @@ public final class CodeGenerateService {
         if (!noDirFiles.isEmpty()) {
             message.append("；目录不存在跳过 ").append(noDirFiles.size()).append(" 个：").append(String.join("、", noDirFiles));
         }
+        if (i18nAppendSummary != null) {
+            message.append(i18nAppendSummary);
+        }
         message.append("</html>");
         boolean hasSkip = !existsFiles.isEmpty() || !noDirFiles.isEmpty();
         NotificationGroupManager.getInstance()
@@ -573,6 +598,45 @@ public final class CodeGenerateService {
 
     // P2-1：i18n 缺失报告数据行（字段名 → 拟生成 key → 拟中文值），P2-2 写入闭环复用
     public record I18nMissingEntry(String fieldName, String proposedKey, String chs) {
+    }
+
+    // P2-2：i18n 命中/缺失汇总（计数 + 缺失清单），供 DataModelGenerator 在 EDT 上基于预查结果
+    // 判定是否走「翻译 → 确认对话框」分流，以及确认对话框的计数展示
+    public record I18nMissingSummary(int hitCount, int missCount, List<I18nMissingEntry> missingEntries) {
+    }
+
+    // P2-2：缺失清单与命中/缺失计数收集（纯函数，EDT 上基于后台预查结果调用，无索引/PSI 查询；
+    // 判定口径与 P2-1 generateBaseQueryTypeFile 内联收集完全一致——弹窗前置后由本方法统一供给）
+    public static I18nMissingSummary collectI18nMissingSummary(String moduleName, String gridName,
+                                                               List<Map<String, Object>> fields,
+                                                               Map<String, List<Property>> precomputedI18n) {
+        Map<String, List<Property>> i18nByComment = precomputedI18n == null ? Collections.emptyMap() : precomputedI18n;
+        int hitCount = 0;
+        int missCount = 0;
+        List<I18nMissingEntry> missingEntries = new ArrayList<>();
+        for (Map<String, Object> field : fields) {
+            Object commentObj = field.get("comment");
+            String comment = commentObj == null ? null : commentObj.toString();
+            List<Property> properties = comment == null
+                    ? Collections.emptyList()
+                    : i18nByComment.getOrDefault(comment, Collections.emptyList());
+            if (!properties.isEmpty()) {
+                hitCount++;
+            } else {
+                String fieldName = String.valueOf(field.get("name"));
+                // P2-2 修复：无 comment 的 state/status/type 是模板 dsp 列约定字段（endsWith 匹配必生成
+                // dsp 显示列），以默认标题「状态」/「类型」进清单，否则 dsp 列 Title 裸字段名且漏追加
+                // dsp key（HaichengMes 验收实证：status 无 comment → Title value="status"）
+                String effectiveComment = isI18nMissingReportable(comment, false)
+                        ? comment : I18nGenerateService.defaultDspFieldTitle(fieldName);
+                if (effectiveComment != null) {
+                    missCount++;
+                    missingEntries.add(new I18nMissingEntry(fieldName,
+                            buildProposedI18nKey(moduleName, gridName, fieldName), effectiveComment));
+                }
+            }
+        }
+        return new I18nMissingSummary(hitCount, missCount, missingEntries);
     }
 
     // P2-1：拟生成 key 拼装（包级静态，供单测锁定，规则 GATE-B 已确认）：

@@ -6,10 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：阶段 2 开工：P2-1（i18n 缺失分析报告，只读）随 2.0.33 发版（2026-09-17）。下一项 **P2-2 i18n 三语言 properties 追加生成**（前置 GATE-B 已确认 + P2-1 前缀映射表已实证）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1
-- **未提交变更清单**（发版提交后清空）：本轮 2.0.33 源码（CodeGenerateService.java、MyPropertiesUtil.java、I18nMissingReportDialog.java、两个新测试）+ CHANGELOG + gradle.properties + 本计划勾选与 P2-1 执行记录，随 2.0.33 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
-- **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响。
+- **当前进行到**：P2-2（i18n 三语言 properties 追加生成 + 布局闭环 + 缓存即时生效修复）随 2.0.34 发版（2026-09-18）。下一项 **P2-3 菜单注册 SQL 草稿**（GATE-C 开工时归纳）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2
+- **未提交变更清单**（发版提交后清空）：本轮 2.0.34 源码（CodeGenerateService.java、DataModelGenerator.java、I18nCacheManager.java、BaseQueryTypeLayout.ftl + 新增 I18nGenerateService.java、I18nAppendConfirmDialog.java、I18nGenerateServiceTest.kt + 删除 I18nMissingReportDialog.java）+ CHANGELOG + gradle.properties + 本计划勾选与 P2-2 执行记录，随 2.0.34 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
 ## 每个小点的标准循环（发版 SOP）
@@ -214,8 +214,9 @@
 - **测试**：需真实验证
 - **风险**：低（只读）
 
-### P2-2 [预留] i18n 三语言 properties 追加生成
-- [ ] 完成
+### P2-2 [预留] i18n 三语言 properties 追加生成 ✅（2026-09-18，2.0.34）
+- [x] 完成
+- **执行记录**：开发委托子代理（开发→编译→单测），主会话独立复跑（编译 EXIT=0、全量 68 例 0 失败）+ 代码审查补两缺口（翻译 Task 补 onCancel 防进度条取消静默丢生成；对话框读回前 stopCellEditing 防编辑中格不回车丢改动）。实现：`I18nGenerateService`（PROJECT 服务，两阶段线程纪律照 findModuleDataGridI18nPropertiesByValueBatch——后台 prepareAppendContext 定位三语言 datagrid 文件 + 读现有 key 集合，EDT appendConfirmedEntries 单 WriteCommandAction 逐文件写入）+ `I18nAppendConfirmDialog`（5 列可编辑确认对话框，替换 P2-1 只读报告 I18nMissingReportDialog，引用点 grep 清零后删除）+ 时序改造（DataModelGenerator onSuccess：无缺失零变化直接生成；有缺失起第二个后台 Task「翻译缺失字段 i18n」→ EDT 弹确认框 →「追加并生成/直接生成」分流，moc 延后保持原时序）。**口径落地（用户拍板）**：① 确认后追加 + 三语言值可编辑（zh_CN 预填 comment、zh_TW/en_US 预填百度翻译 cht/en，翻译开头连续 3 字段失败快速放弃）；② dsp 对齐真实惯例——字段名精确 state/status/type 顺带补 `<field>dsp` key 三语言值同原字段（DengqiMes 实证 statedsp/typedsp/statusdsp 三对，RoutingTypeDsp 复用原 key 属反例不扩大）。**首轮真实验证（用户，HaichengMes biz_base_factory GridName=BaseFactory）暴露两缺陷已随版修复**：① dsp 列 Title 裸名——模板 BaseQueryTypeLayout.ftl:31 本就对 endsWith('state'/'status') 字段生成 dsp 显示列，海程表 status 无 comment 不进清单 → Title 回退裸名且漏 statusdsp key；修复 = 模板 dsp 列 Title 改 `${column.dspKey!column.i18nKey!column.name}` + 无 comment 的三字段以默认标题「状态」/「类型」进清单 + 确认路径 put dspKey 闭环。② 折叠/inlay/悬浮对追加 key 不生效（用户判「i18n 缓存未更新」正确）——`I18nCacheManager.loadSingleFile` 用 loadText（VFS 层）读，而 PSI addProperty 只落 Document、WriteCommandAction 不触发 save、VFS_CHANGES 不发 → 缓存重装载旧内容；修复 = loadSingleFile 优先读 cached Document（FileDocumentManager.getCachedDocument），listener 路径行为不变。**修复后二轮验证用户确认通过**：status 以默认标题进清单、statusdsp 列 Title 专属 key、生成完立即打开 Layout 折叠即时生效、三语言只新增行、幂等重跑 +0。**清理教训**：验证后三语言 properties 混用户业务 changelist（设备OEE）改动，**不可整文件 svn revert**——按插件 key 前缀（basefactorygrid.）行级删除 dry-run 再执行，产物被 IDEA svn 自动 add 的先 revert 撤 add 再删（7 件套含 model/Order/ 下 Moc 件共 8 处）；runIde 后台 gradle 管道被低内存杀掉后沙箱 IDE 进程（2.3GB）残留挤占内存致下轮 OOM——重启前先查 ideaIU-2024.3.5 进程。单测 48 → 68（I18nGenerateServiceTest 20 例 + collectI18nMissingSummary 默认标题 2 例）。
 - **前置**：P2-1 的 GATE-B 已确认
 - **改动点**：
   1. 新建 I18nGenerateService：定位模块三个 datagrid properties 文件（复用 MyPropertiesUtil 的文件定位逻辑），对缺失 key **只追加**（读现有 key 集合，存在即跳过；绝不改动/删除已有行）

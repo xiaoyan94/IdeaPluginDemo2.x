@@ -31,7 +31,7 @@
             <#if column.name?lowerCase?endsWith('state') || column.name?lowerCase?endsWith('status')>
             <Column name="${column.name}dsp" type="${column.type}"<#if superAdminFields?seqContains(column.name)> condition="{usertype} == '1'"</#if>>
                 <Field value="${column.name}dsp"/>
-                <Title value="${column.i18nKey!column.name}" chs="${column.chs!column.name}" eng="${column.eng!column.name}"/>
+                <Title value="${column.dspKey!column.i18nKey!column.name}" chs="${column.chs!column.name}" eng="${column.eng!column.name}"/>
                 <Align value="${column.align!'left'}"/>
                 <Width value="${column.width!"150"}"/>
                 <Hidden value="false"/>

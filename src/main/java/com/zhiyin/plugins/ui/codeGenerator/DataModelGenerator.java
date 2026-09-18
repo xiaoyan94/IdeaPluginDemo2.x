@@ -22,6 +22,8 @@ import com.intellij.util.ExceptionUtil;
 import com.zhiyin.plugins.notification.MyPluginMessages;
 import com.zhiyin.plugins.resources.MyIcons;
 import com.zhiyin.plugins.service.CodeGenerateService;
+import com.zhiyin.plugins.service.I18nGenerateService;
+import com.zhiyin.plugins.translator.baidu.BaiduTranslator;
 import com.zhiyin.plugins.utils.*;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -712,7 +714,67 @@ public class DataModelGenerator {
             public void onSuccess() {
                 // Task.Backgroundable#onSuccess 在 EDT 执行：只消费预查结果，不再触发索引查询
                 if (dataQueryRadioButton.isSelected()) {
-                    service.generateBaseQueryTypeFile(module, folder, modelName, fileName, sql, fields, paramsMap, i18nByComment);
+                    // P2-2：纯逻辑计算缺失清单（复用预查结果，无索引/PSI 查询）；无缺失时零行为变化（直接生成，不弹窗）
+                    CodeGenerateService.I18nMissingSummary missingSummary = CodeGenerateService.collectI18nMissingSummary(
+                            module.getName(), modelName, fields, i18nByComment);
+                    if (!missingSummary.missingEntries().isEmpty()) {
+                        // 有缺失 → 第二个后台 Task：定位三语言 datagrid 文件 + 串行百度翻译，
+                        // 完成后 EDT 弹可编辑确认对话框按「追加并生成/直接生成」分流；
+                        // moc 生成延后到分流后（保持查询件先于 moc 的原时序）
+                        new Task.Backgroundable(project, "翻译缺失字段 i18n", true) {
+                            private I18nGenerateService.I18nDatagridAppendContext appendContext;
+                            private List<I18nAppendConfirmDialog.I18nConfirmRow> confirmRows;
+
+                            @Override
+                            public void run(@NotNull ProgressIndicator indicator) {
+                                indicator.setIndeterminate(true);
+                                appendContext = project.getService(I18nGenerateService.class).prepareAppendContext(module);
+                                confirmRows = translateMissingEntriesForConfirm(missingSummary.missingEntries());
+                            }
+
+                            @Override
+                            public void onSuccess() {
+                                // EDT：弹确认对话框（字段名/key 只读，三语言值可编辑）
+                                I18nAppendConfirmDialog dialog = new I18nAppendConfirmDialog(
+                                        MyPropertiesUtil.deriveI18nKeyPrefix(module.getName()), module.getName(),
+                                        missingSummary.hitCount(), missingSummary.missCount(), confirmRows);
+                                dialog.show();
+                                // 「追加并生成」(OK) → 确认 map + 追加上下文（生成后写 properties + 布局 i18nKey 闭环）；
+                                // 「直接生成」/Esc/关闭 → null（不写 properties，保持现状裸中文回退）
+                                Map<String, I18nGenerateService.I18nConfirmedAppend> confirmedI18nByField = dialog.isOK()
+                                        ? dialog.readConfirmedByField() : null;
+                                service.generateBaseQueryTypeFile(module, folder, modelName, fileName, sql, fields,
+                                        paramsMap, i18nByComment, confirmedI18nByField,
+                                        confirmedI18nByField == null ? null : appendContext);
+                                if (mocCheckBox.isSelected()) {
+                                    service.generateMocFile(module, folder, modelName, tableName, fields);
+                                }
+                            }
+
+                            @Override
+                            public void onError(@NotNull Exception error) {
+                                // 翻译/文件定位失败不阻断生成：降级为直接生成（裸中文回退，与 P2-2 之前行为一致）
+                                LOG.warn("i18n 翻译后台任务失败，按直接生成继续", error);
+                                service.generateBaseQueryTypeFile(module, folder, modelName, fileName, sql, fields,
+                                        paramsMap, i18nByComment, null, null);
+                                if (mocCheckBox.isSelected()) {
+                                    service.generateMocFile(module, folder, modelName, tableName, fields);
+                                }
+                            }
+
+                            @Override
+                            public void onCancel() {
+                                // 用户取消进度条（翻译卡住不想等）也不丢生成：降级为直接生成（onSuccess/onError 均不会走）
+                                service.generateBaseQueryTypeFile(module, folder, modelName, fileName, sql, fields,
+                                        paramsMap, i18nByComment, null, null);
+                                if (mocCheckBox.isSelected()) {
+                                    service.generateMocFile(module, folder, modelName, tableName, fields);
+                                }
+                            }
+                        }.queue();
+                        return;
+                    }
+                    service.generateBaseQueryTypeFile(module, folder, modelName, fileName, sql, fields, paramsMap, i18nByComment, null, null);
                 }
 
                 if (mocCheckBox.isSelected()) {
@@ -731,6 +793,57 @@ public class DataModelGenerator {
 
         // 关闭窗口
 //        frame.dispose();
+    }
+
+    /**
+     * P2-2：缺失字段三语言翻译（后台线程串行调用 BaiduTranslator，from=auto，zh_TW→cht、en_US→en；
+     * zh_CN 预填 comment 不走翻译）。
+     * <p>快速失败：开头连续 {@code I18nGenerateService.FAST_FAIL_TRANSLATION_THRESHOLD}（=3）个字段翻译
+     * 都抛异常则放弃剩余翻译、全部置空（断网时不让用户等几十次超时）；单字段失败只置空该字段对应
+     * 语言值，翻译失败的格在确认对话框里可手填。</p>
+     */
+    private List<I18nAppendConfirmDialog.I18nConfirmRow> translateMissingEntriesForConfirm(
+            List<CodeGenerateService.I18nMissingEntry> missingEntries) {
+        BaiduTranslator translator = ApplicationManager.getApplication().getService(BaiduTranslator.class);
+        List<I18nAppendConfirmDialog.I18nConfirmRow> rows = new ArrayList<>();
+        int leadingConsecutiveFailures = 0;
+        boolean seenAnySuccess = false;
+        boolean abandoned = false;
+        for (CodeGenerateService.I18nMissingEntry entry : missingEntries) {
+            String zhTw = "";
+            String enUs = "";
+            if (!abandoned) {
+                boolean fieldFailed = false;
+                try {
+                    zhTw = translator.translate(entry.chs(), "auto", "cht");
+                    seenAnySuccess = true;
+                } catch (Exception ex) {
+                    fieldFailed = true;
+                    LOG.info("i18n 翻译 zh_TW 失败（" + entry.proposedKey() + "）：" + ExceptionUtil.getMessage(ex));
+                }
+                try {
+                    enUs = translator.translate(entry.chs(), "auto", "en");
+                    seenAnySuccess = true;
+                } catch (Exception ex) {
+                    fieldFailed = true;
+                    LOG.info("i18n 翻译 en_US 失败（" + entry.proposedKey() + "）：" + ExceptionUtil.getMessage(ex));
+                }
+                // 只统计「开头」的连续失败（出现任一成功后不再累积）
+                if (!seenAnySuccess && fieldFailed) {
+                    leadingConsecutiveFailures++;
+                    if (I18nGenerateService.shouldFastFailTranslations(leadingConsecutiveFailures)) {
+                        abandoned = true;
+                        zhTw = "";
+                        enUs = "";
+                        LOG.warn("开头连续 " + leadingConsecutiveFailures + " 个字段翻译均失败（疑似断网/密钥失效），"
+                                + "放弃剩余翻译；空值格可在确认对话框手填，确认后走 TODO 注释行降级");
+                    }
+                }
+            }
+            rows.add(new I18nAppendConfirmDialog.I18nConfirmRow(
+                    entry.fieldName(), entry.proposedKey(), entry.chs(), zhTw, enUs));
+        }
+        return rows;
     }
 
     public void show() {
