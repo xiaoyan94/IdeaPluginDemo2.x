@@ -8,7 +8,7 @@
 
 - **当前进行到**：P2-2（i18n 三语言 properties 追加生成 + 布局闭环 + 缓存即时生效修复）随 2.0.34 发版（2026-09-18）。下一项 **P2-3 菜单注册 SQL 草稿**（GATE-C 开工时归纳）
 - **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2
-- **未提交变更清单**（发版提交后清空）：本轮 2.0.34 源码（CodeGenerateService.java、DataModelGenerator.java、I18nCacheManager.java、BaseQueryTypeLayout.ftl + 新增 I18nGenerateService.java、I18nAppendConfirmDialog.java、I18nGenerateServiceTest.kt + 删除 I18nMissingReportDialog.java）+ CHANGELOG + gradle.properties + 本计划勾选与 P2-2 执行记录，随 2.0.34 发版一并提交，提交后本清单清空。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **未提交变更清单**：无（2.0.34 已随 bac8f81 提交，工作区干净）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
