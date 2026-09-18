@@ -72,8 +72,9 @@ public class ShowTableStructureAction extends AnAction {
 
     @Override
     public @NotNull ActionUpdateThread getActionUpdateThread() {
-        // update 里读取选区文本，EDT 才线程安全
-        return ActionUpdateThread.EDT;
+        // BGT 下 update 由平台包在 read action 里执行，读选区文本线程安全；
+        // 首次 update 触发 MyBundle 冷加载（jar 解压 + ResourceBundle），放 EDT 会卡右键菜单（338ms 事故）
+        return ActionUpdateThread.BGT;
     }
 
     @Override

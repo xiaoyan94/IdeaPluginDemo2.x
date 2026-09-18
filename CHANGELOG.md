@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [2.0.36] - 2026-09-18
+
+fix: Mapper 方法 Ctrl+B 弹窗同一目标偶现重复 N 次 + 表结构右键菜单首弹卡顿，两笔随版修复
+
+- **Ctrl+B 重复目标根因——缓存盲加不去重**：`MyProjectService` 的 `xmlFileMap`/`mocFileMap` 启动全量扫描加载 1 次，之后每次保存 mapper XML（`VFileContentChangeEvent`）`MyXmlFileListener` 再向同 namespace 的 List 盲 append 1 条；`MyJavaMethodReference.multiResolve` 按缓存条数展开导航目标——保存 3 次即弹窗 4 条相同 Mapper 标签（偶现取决于自上次 reload 后保存次数）。`cacheToMap`/`cacheMocToMap` 改为按 VirtualFile 先驱逐后加的幂等合并，且 compute 内构建新 list 整体替换（copy-on-write）——顺带消除后台扫描线程改普通 ArrayList 与 EDT 导航读并发的修改风险
+- **伴生修复（同根因）**：`reInitXmlFileMap` 补 `mocFileMap.clear()`（原先漏清，Moc 引用同样累积）；`MyXmlFileListener` 补 `VFileDeleteEvent`（驱逐）/`VFileMoveEvent`（驱逐+重加）两个 TODO，删除/移动 mapper 文件不再残留 invalid 陈旧目标；VFS 订阅裸 `connect()` 改 `connect(project)` 对齐生命周期规范
+- **ShowTableStructureAction 右键菜单首弹卡 338ms**：`getActionUpdateThread` EDT → BGT——update 首次触发 `MyBundle` 冷加载（jar 解压 + ResourceBundle），放 EDT 会卡右键菜单弹出；BGT 下 update 由平台包在 read action 里执行，读选区文本线程安全
+- 验证：编译通过；Ctrl+B 修复待真实环境验证（同一 mapper XML 保存多次后字符串方法名 Ctrl+B 弹窗恒 1 条）
+
 ## [2.0.35] - 2026-09-18
 
 feat: 菜单注册 SQL 草稿（codegen 改造 P2-3）——勾选后随生成产出四表幂等 insert 草稿，插件不执行任何 SQL、不连库
@@ -361,7 +370,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.35...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.36...HEAD
+[2.0.36]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.35...v2.0.36
 [2.0.35]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.34...v2.0.35
 [2.0.34]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.33...v2.0.34
 [2.0.33]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.32...v2.0.33

@@ -82,7 +82,7 @@ public final class MyProjectService {
     }
 
     private static void subscribeMessageTopicListeners(Project project) {
-        project.getMessageBus().connect().subscribe(VirtualFileManager.VFS_CHANGES, new MyXmlFileListener(project));
+        project.getMessageBus().connect(project).subscribe(VirtualFileManager.VFS_CHANGES, new MyXmlFileListener(project));
         LOG.info("subscribeMessageTopicListeners, topic: " + VirtualFileManager.VFS_CHANGES + ", handler: " + MyXmlFileListener.class.getName());
     }
 
@@ -123,6 +123,7 @@ public final class MyProjectService {
             public void run(@NotNull ProgressIndicator indicator) {
                 System.out.println("Task.Backgroundable: Current thread:" + Thread.currentThread().getName());
                 xmlFileMap.clear();
+                mocFileMap.clear();
 
                 initXmlFileMap(indicator);
 
@@ -216,13 +217,7 @@ public final class MyProjectService {
 //            LOG.warn("key is null, element: " + element);
             return;
         }
-        xmlFileMap.compute(key, (k, v) -> {
-            if (v == null) {
-                v = new ArrayList<>();
-            }
-            v.add(element.getRootElement());
-            return v;
-        });
+        xmlFileMap.compute(key, (k, v) -> mergedList(v, element.getRootElement()));
     }
 
     private void cacheMocToMap(DomFileElement<Moc> element) {
@@ -231,13 +226,58 @@ public final class MyProjectService {
 //            LOG.warn("key is null, element: " + element);
             return;
         }
-        mocFileMap.compute(key, (k, v) -> {
-            if (v == null) {
-                v = new ArrayList<>();
+        mocFileMap.compute(key, (k, v) -> mergedList(v, element.getRootElement()));
+    }
+
+    /**
+     * 幂等合并：同一 VirtualFile 只保留最新一条（重复 addToXmlFileMap 时替换而非追加，
+     * 否则 Ctrl+B 弹窗同一 Mapper 标签会随保存次数重复出现），同时剔除已失效条目；
+     * compute 内构建新 list 整体替换，导航侧并发读旧快照不受修改影响。
+     */
+    private static <T extends DomElement> List<T> mergedList(List<T> existing, T fresh) {
+        List<T> next = new ArrayList<>(existing == null ? 1 : existing.size() + 1);
+        VirtualFile freshFile = domVirtualFile(fresh);
+        if (existing != null) {
+            for (T item : existing) {
+                if (!item.isValid()) {
+                    continue;
+                }
+                if (freshFile != null && freshFile.equals(domVirtualFile(item))) {
+                    continue;
+                }
+                next.add(item);
             }
-            v.add(element.getRootElement());
-            return v;
-        });
+        }
+        next.add(fresh);
+        return next;
+    }
+
+    /**
+     * 从两个缓存中驱逐该文件的全部条目（文件删除/移动时调用，防止残留 invalid 陈旧目标）。
+     */
+    public void removeFromXmlFileMap(VirtualFile virtualFile) {
+        if (virtualFile == null) {
+            return;
+        }
+        xmlFileMap.replaceAll((k, v) -> evictedList(v, virtualFile));
+        mocFileMap.replaceAll((k, v) -> evictedList(v, virtualFile));
+    }
+
+    private static <T extends DomElement> List<T> evictedList(List<T> existing, VirtualFile virtualFile) {
+        List<T> next = new ArrayList<>(existing.size());
+        for (T item : existing) {
+            if (!item.isValid() || virtualFile.equals(domVirtualFile(item))) {
+                continue;
+            }
+            next.add(item);
+        }
+        return next;
+    }
+
+    private static VirtualFile domVirtualFile(DomElement domElement) {
+        XmlTag xmlTag = domElement.getXmlTag();
+        PsiFile psiFile = xmlTag == null ? null : xmlTag.getContainingFile();
+        return psiFile == null ? null : psiFile.getVirtualFile();
     }
 
     private <T extends DomElement> void cacheToMap(XmlFile xmlFile, Class<T> clazz, Function<T, String> keyExtractor, Map<String, List<T>> targetMap) {

@@ -43,9 +43,13 @@ public class MyXmlFileListener implements BulkFileListener {
                 MyProjectService myProjectService = project.getService(MyProjectService.class);
                 myProjectService.addToXmlFileMap(virtualFile);
             } else if (event instanceof VFileDeleteEvent) {
-                // TODO
+                // 同文件驱逐幂等：删除的文件从缓存移除，防止残留 invalid 陈旧目标
+                MyProjectService myProjectService = project.getService(MyProjectService.class);
+                myProjectService.removeFromXmlFileMap(event.getFile());
             } else if (event instanceof VFileMoveEvent) {
-                // TODO
+                MyProjectService myProjectService = project.getService(MyProjectService.class);
+                myProjectService.removeFromXmlFileMap(event.getFile());
+                myProjectService.addToXmlFileMap(event.getFile());
             }
         }
 
