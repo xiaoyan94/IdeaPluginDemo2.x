@@ -145,32 +145,6 @@ public class DatabaseMetadataUtil {
         }
     }
 
-    /**
-     * MySQL 类型转换 字符串的一律返回 string 整数类型的一律返回int 时间类型的返回 datetime
-     */
-    private static String getType(String columnType) {
-        switch (columnType) {
-            case "INT":
-            case "INTEGER":
-            case "TINYINT":
-            case "SMALLINT":
-            case "MEDIUMINT":
-            case "BIGINT":
-            case "BIT":
-            case "SERIAL":
-                return "int";
-            case "DATE":
-            case "DATETIME":
-            case "TIMESTAMP":
-            case "TIME":
-                return "datetime";
-            case "DECIMAL":
-                return "number";
-            default:
-                return "string";
-        }
-    }
-
     // getAllDatabaseConnectionsMetaData, params connection info by DatabaseConnectionFinder class
     public static List<Map<String, Object>> getAllDatabaseConnectionsMetaData(List<Map<String, String>> databaseConnections,
                                                                               String tableName) throws SQLException {

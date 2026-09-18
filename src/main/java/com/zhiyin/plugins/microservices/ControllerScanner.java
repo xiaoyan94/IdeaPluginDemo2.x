@@ -60,6 +60,10 @@ public final class ControllerScanner {
             // run non-blocking read action
             ReadAction.nonBlocking(() -> performScan(project))
                       .expireWith(PluginDisposable.getInstance(project))
+                      // dumb 期间不执行、smart 后自动重跑：否则 runWhenSmart 触发到线程池真正执行之间
+                      // 再次进入 dumb（启动后 Maven import/索引补扫高发窗口）时 performScan 的 isDumb
+                      // 早退会返回空 map 当作扫描成功结果，空集被锁进缓存直到手动 Reset
+                      .inSmartMode(project)
                       .coalesceBy(project, "microservices-controller-scan")
                       .finishOnUiThread(ModalityState.nonModal(), result -> {
                           // invoke consumer on UI thread (safe)

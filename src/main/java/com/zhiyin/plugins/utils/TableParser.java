@@ -124,8 +124,10 @@ public class TableParser {
     }
 
     /**
-     * 逐片段提取列定义：片段头 `name` type(len[,scale]) 定名列/类型/长度（length 语义与旧
-     * 实现一致：只取第一个数字、有 scale 的只存第一个——decimal 丢 scale 属 P2-5 范围）；
+     * 逐片段提取列定义：片段头 `name` type(len[,scale]) 定名列/类型/长度——length 在 P2-5 后
+     * 保留 scale（decimal(19,4)→"19,4"，词表 length="18,4" 形态 16 例实证；无 scale 时仅 len，
+     * int(11)/varchar(64) 行为不变，无括号为空串）；列类型为 enum 时额外写 enumRef=列名小写
+     * （GATE-E：459 例 enum 字段 100% 带 enum= 属性，字典 code 默认字段名，用户可手改）；
      * 片段内找 COMMENT '...'（值内 '' 还原为 '）；片段含 NOT NULL 或 AUTO_INCREMENT 则
      * nullable=false。不具列定义形态的片段（PRIMARY KEY / KEY / UNIQUE KEY / CONSTRAINT /
      * INDEX 开头，片段头不匹配）直接跳过。
@@ -154,7 +156,17 @@ public class TableParser {
             Map<String, Object> columnInfo = new HashMap<>();
             columnInfo.put("name", columnName == null ? "" : columnName.toLowerCase());
             columnInfo.put("type", getType(header.group(2)));
-            columnInfo.put("length", header.group(4) != null ? header.group(4) : "");
+            // P2-5：length 保留 scale——group(4)=P、group(6)=S 均非空时 "P,S"，无 scale 仅 P
+            if (header.group(4) != null && header.group(6) != null) {
+                columnInfo.put("length", header.group(4) + "," + header.group(6));
+            } else if (header.group(4) != null) {
+                columnInfo.put("length", header.group(4));
+            } else {
+                columnInfo.put("length", "");
+            }
+            if ("enum".equalsIgnoreCase(header.group(2))) {
+                columnInfo.put("enumRef", columnInfo.get("name"));
+            }
             columnInfo.put("nullable", notNullable ? "false" : "true");
             columnInfo.put("isRequired", notNullable ? "true" : "false");
             columnInfo.put("comment", comment);
@@ -163,7 +175,8 @@ public class TableParser {
         return columns;
     }
 
-    /** 旧版整段正则解析：仅在列定义体定位失败（畸形 DDL）时兜底，原始实现原样保留 */
+    /** 旧版整段正则解析：仅在列定义体定位失败（畸形 DDL）时兜底。P2-5 起与主路径同步维护
+     *  length 保留 scale / enum 列 enumRef / getType 映射，其余保持原始实现 */
     private static List<Map<String, Object>> parseCreateTableByRegex(String createTableSql) {
         List<Map<String, Object>> columns = new ArrayList<>();
 
@@ -201,10 +214,17 @@ public class TableParser {
             columnInfo.put("name", columnName == null ? "" : columnName.toLowerCase());
             columnInfo.put("type", getType(columnMatcher.group(2)));
 
-            if (columnMatcher.group(4) != null) {
+            // P2-5：与 parseColumnFragments 同款修复——length 保留 scale，enum 列写 enumRef=列名小写，
+            // 维持「片段化主路径与正则兜底产物一致」不变量（getType 经共享函数自动生效）
+            if (columnMatcher.group(4) != null && columnMatcher.group(6) != null) {
+                columnInfo.put("length", columnMatcher.group(4) + "," + columnMatcher.group(6));
+            } else if (columnMatcher.group(4) != null) {
                 columnInfo.put("length", columnMatcher.group(4));
             } else {
                 columnInfo.put("length", "");
+            }
+            if ("enum".equalsIgnoreCase(columnMatcher.group(2))) {
+                columnInfo.put("enumRef", columnInfo.get("name"));
             }
 
             columnInfo.put("nullable", nullables.getOrDefault(columnName, true).toString());
@@ -217,17 +237,49 @@ public class TableParser {
         return columns;
     }
 
+    /**
+     * DDL 类型 → Moc 类型映射（P2-5，GATE-E 词表：DengqiMes 1245 个既有 Moc XML 统计定案，不得臆造）：
+     * varchar/char/text 族 → string；int 族（int/integer/tinyint/smallint/mediumint/bigint/bit）→ int
+     * （bigint 主键全库 1113 例中 1109 为 int）；decimal → decimal（不再折算 number，词表 109 例实证）；
+     * date → date（58 例独立类型）；datetime/timestamp/time → datetime；float/double → float；
+     * enum → enum（enum= 属性由模板层经 enumRef 输出，字典 code 默认字段名，用户可手改）；
+     * 未知类型（json/blob 等）兜底 string。输出一律小写。
+     */
     public static String getType(String type){
         if(type == null){
             return "";
         }
         switch (type.toLowerCase()){
             case "varchar":
+            case "char":
+            case "text":
+            case "tinytext":
+            case "mediumtext":
+            case "longtext":
                 return "string";
+            case "int":
+            case "integer":
+            case "tinyint":
+            case "smallint":
+            case "mediumint":
+            case "bigint":
+            case "bit":
+                return "int";
             case "decimal":
-                return "number";
+                return "decimal";
+            case "date":
+                return "date";
+            case "datetime":
+            case "timestamp":
+            case "time":
+                return "datetime";
+            case "float":
+            case "double":
+                return "float";
+            case "enum":
+                return "enum";
             default:
-                return type;
+                return "string";
         }
     }
 

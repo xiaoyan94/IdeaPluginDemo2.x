@@ -79,4 +79,50 @@ class DataModelGeneratorTest {
         assertEquals("未知数据源", DataModelGenerator.describeDbHost(null))
         assertEquals("未知数据源", DataModelGenerator.describeDbHost("not-a-jdbc-url"))
     }
+
+    // ---- parseDialogLength（P2-5）：编辑对话框打开时的长度解析 ----
+    // "P,S" 只取精度部分；空串/非数字兜底 0——旧 Integer.parseInt 对 "19,4" 与 ""（datetime/enum 列）均抛 NumberFormatException
+
+    @Test
+    fun parseDialogLength_decimalScale_takesPrecisionPart() {
+        assertEquals(19, DataModelGenerator.parseDialogLength("19,4"))
+        assertEquals(10, DataModelGenerator.parseDialogLength("10,2"))
+    }
+
+    @Test
+    fun parseDialogLength_plainAndIntegerForms() {
+        assertEquals(19, DataModelGenerator.parseDialogLength("19"))
+        assertEquals(128, DataModelGenerator.parseDialogLength(128)) // 编辑回写过的 Integer 形态
+        assertEquals(18, DataModelGenerator.parseDialogLength(" 18 "))
+    }
+
+    @Test
+    fun parseDialogLength_nullEmptyAndGarbage_fallbackZero() {
+        assertEquals(0, DataModelGenerator.parseDialogLength(null))
+        assertEquals("空串（datetime/enum 列）不抛异常，兜底 0", 0, DataModelGenerator.parseDialogLength(""))
+        assertEquals(0, DataModelGenerator.parseDialogLength("ab,c"))
+    }
+
+    // ---- resolveEditedLength（P2-5）：编辑确认回写决策 ----
+    // 原 "P,S" 且未改长度 → 原样带回（scale 不丢）；改了长度 → Integer 优先；无逗号/null → 对话框值
+
+    @Test
+    fun resolveEditedLength_unchanged_decimalScalePreserved() {
+        assertEquals("19,4", DataModelGenerator.resolveEditedLength("19,4", 19))
+        assertEquals("10,2", DataModelGenerator.resolveEditedLength("10,2", 10))
+    }
+
+    @Test
+    fun resolveEditedLength_changed_userValueWins() {
+        assertEquals(25, DataModelGenerator.resolveEditedLength("19,4", 25))
+        assertEquals(64, DataModelGenerator.resolveEditedLength(128, 64))
+    }
+
+    @Test
+    fun resolveEditedLength_noCommaOrNull_dialogValue() {
+        assertEquals(19, DataModelGenerator.resolveEditedLength("19", 19))
+        assertEquals(0, DataModelGenerator.resolveEditedLength("", 0))
+        assertEquals(32, DataModelGenerator.resolveEditedLength(null, 32)) // rowIndex==-1 新增字段
+        assertEquals(128, DataModelGenerator.resolveEditedLength(128, 128))
+    }
 }

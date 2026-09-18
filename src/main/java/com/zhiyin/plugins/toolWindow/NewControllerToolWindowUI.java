@@ -131,6 +131,13 @@ public class NewControllerToolWindowUI {
     }
 
     private void doSearch() {
+        doSearch(true);
+    }
+
+    /**
+     * @param allowRescan 缓存为空时是否允许自动触发重扫并回调重搜（防递归，自愈重搜传 false）
+     */
+    private void doSearch(boolean allowRescan) {
         String inputUrl = urlField.getText().trim();
         if (inputUrl.isEmpty()) {
             MyPluginMessages.showWarning("输入为空", "请输入 URL 片段进行搜索", project);
@@ -152,6 +159,13 @@ public class NewControllerToolWindowUI {
             return methods;
         }).finishOnUiThread(ModalityState.defaultModalityState(), results -> {
             if (results == null || results.isEmpty()) {
+                // 空缓存自愈：启动扫描若在 dumb/依赖未就绪窗口跑空，这里自动重扫一次并重搜，
+                // 不再需要手动点 Reset（缓存非空只是无匹配时走正常"未找到"分支）
+                if (allowRescan && ControllerMappingService.getInstance(project).getUrlCount() == 0) {
+                    MyPluginMessages.showInfo("缓存为空", "Controller 缓存为空，正在后台扫描，完成后自动重新搜索", project);
+                    ControllerMappingService.getInstance(project).startScan(true, () -> doSearch(false));
+                    return;
+                }
                 MyPluginMessages.showInfo("未找到匹配项", "未找到匹配的 URL 映射", project);
                 return;
             }

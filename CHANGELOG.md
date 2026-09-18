@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+## [2.0.38] - 2026-09-18
+
+feat: 代码生成器类型映射精度增强（codegen 改造 P2-5）——Moc 类型/长度按真实项目词表映射，decimal 保留 scale、enum 生成字典属性
+
+- **DDL→Moc 类型映射按 GATE-E 真实词表重写**（`TableParser.getType`，DengqiMes 1245 个既有 Moc XML 统计定案，不臆造）：bigint/tinyint 等 int 族→int（bigint 主键既有惯例 1109/1113 为 int）、decimal→decimal（不再折算 number）、date 独立成类（不再混入 datetime）、timestamp/time→datetime、float/double→float、char/text 族→string、未知类型兜底 string；输出一律小写。DB 直读与 DDL 粘贴两路径 P1-2 后本就同源 TableParser，本次天然归一；正则兜底路径同款修复，双路径产物一致不变量维持
+- **decimal 保留 scale**：`decimal(19,4)` 生成 `length="19,4"`（既有 Moc 16 例同形态实证），修正旧版丢 scale 只存精度
+- **enum 字段生成 `enum="字段名"` 属性**（459 例 enum 字段 100% 带 enum= 实证，字典 code 默认字段名、可手改）——旧版完全不生成，与既有 Moc 惯例不一致
+- **随版修两处编辑链路回归**：① 编辑 decimal(P,S) 行 `Integer.parseInt("19,4")` 崩溃（旧版对 datetime 等空串 length 同样会崩）——对话框打开取精度部分、确认未改长度时原样带回 "P,S"，scale 不因编辑往返丢失；② 编辑回写白名单式重建丢 enumRef——原 map 含该键则透传
+- easyuiClass 启发式联动：decimal/float 字段配 easyui-numberbox（decimal 不再折算 number 后的直连分支补齐）
+- 删死代码 `DatabaseMetadataUtil.getType`（P1-2 后零调用，删前 grep 复核）
+- 基线零漂移程序化锁定：新增 MocTemplateGoldenTest——真实基线 DDL→新解析→新模板渲染与基线 Moc 件逐字节相等，int/datetime 不输出 length 红线断言；单测 73→86（TableParserTest 词表全覆盖 + 双路径一致、DataModelGeneratorTest 纯函数 6 例）
+- 验证：编译 + 全量单测 86 例 0 失败；真实项目 DDL 粘贴全类型核对通过（bigint→int、decimal 保留 scale、enum 带 enum=、date/datetime/timestamp/float/tinyint 归位、编辑往返不崩不丢）
+
+## [2.0.37] - 2026-09-18
+
+fix: Ctrl+Alt+Shift+\ URL 搜索首次必空、须手动 Reset 才能搜到——启动扫描空集锁死修复
+
+- **根因——启动扫描可在 dumb 窗口"成功"返回空 map 并锁死缓存**：`ControllerScanner.scheduleScan` 的 NBRA 链缺 `.inSmartMode(project)`，`runWhenSmart` 触发到线程池真正执行之间若再次进入 dumb（启动后首轮 smart 恰是 Maven import/索引补扫高发窗口），`performScan` 的 `isDumb` 早退返回空 map，被当作扫描成功结果 `replaceCache` 锁进缓存，无 TTL 无重试；与 2.0.20 ComboboxUrlService 空集锁死同类
+- **自愈缺失**：2026.2 起 URL 搜索切工具窗口（`NewControllerToolWindowUI.doSearch`）只读快照，空 → 弹「未找到」即结束；旧 Search Everywhere 路径空结果时自动重扫+重搜的自愈（`UrlSearchEverywhereContributor`）随切换丢失，导致只能手动 Reset 解锁（Reset 时索引早已完成，重扫拿到真实结果）
+- **修复**：① `ControllerScanner` NBRA 补 `.inSmartMode(project)`——dumb 期不执行、smart 后自动重跑，从源头消灭 isDumb 早退空结果；② `doSearch` 空缓存自愈——搜索命中空结果且缓存为空时提示并自动 `startScan(true)`，完成后重搜一次（防递归 flag），兜底依赖未导入完等其余空锁场景；缓存非空只是无匹配时仍走正常「未找到」分支
+- 已知边界：自愈触发时若恰有扫描在途（`scanning` 占用），回调被静默丢弃需再按一次 Enter，正常场景不受影响
+- 验证：编译通过；完整链路待真实 MES 项目验证（重启 IDEA 直接搜索应可搜到、全程无需 Reset）
+
 ## [2.0.36] - 2026-09-18
 
 fix: Mapper 方法 Ctrl+B 弹窗同一目标偶现重复 N 次 + 表结构右键菜单首弹卡顿，两笔随版修复
@@ -370,7 +393,9 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.36...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.38...HEAD
+[2.0.38]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.37...v2.0.38
+[2.0.37]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.36...v2.0.37
 [2.0.36]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.35...v2.0.36
 [2.0.35]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.34...v2.0.35
 [2.0.34]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.33...v2.0.34

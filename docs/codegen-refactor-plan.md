@@ -6,9 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：P2-3（菜单注册 SQL 草稿，GATE-C 口径归纳 + 幂等取号 + 随版修 createDirectoryIfMissing 写动作断言）随 2.0.35 发版（2026-09-18）。下一项 **P2-4 约定外置 .zhiyin/codegen.properties**（GATE-D 开工时核对）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3
-- **未提交变更清单**：无（2.0.35 已随本次 feat 提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **当前进行到**：P2-5（类型映射精度增强，GATE-E 词表 + decimal 保留 scale + enum 生成字典属性 + 随版修两处编辑回归）随 2.0.38 发版（2026-09-18；预留号顺延：2.0.37 被并发「URL 搜索空锁修复」占用）。下一项 **P2-6 Imp mapper 导入列定义骨架**（预留 2.1.0，阶段 2 最后一项——做前先反编译核对框架 import 机制，mes-jar-decompile skill）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5
+- **搁置**：P2-4（2026-09-18 用户决定，见文末搁置区）
+- **未提交变更清单**：无（2.0.38 随本次 feat 提交；2.0.37 并发改动经用户拍板一笔混合提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -243,25 +244,15 @@
 - **测试**：需真实验证（比对既有样例）
 - **风险**：低（纯文本产物）
 
-### P2-4 [预留] 约定外置：.zhiyin/codegen.properties
-- [ ] 完成
-- **现状证据**：模块名特殊映射硬编码（MyPropertiesUtil.java:614-624：system→sysadm、configure/v2→basic，属其他项目口径）；默认隐藏列/超管列在两个模板头部重复硬编码（BaseQueryTypeLayout.ftl:1-3、BaseQueryTypeMoc.ftl:1-3）；查询字段启发式硬编码（DataModelGenerator.java:358-367）
-- **改动点**：
-  1. 定义 `.zhiyin/codegen.properties` 配置项：`module.folder.mapping.*`（模块名→folder）、`i18n.prefix.*`（模块→key 前缀，服务 P2-2）、`export.framework`（easyexcel/easyexcel2/auto，兜底 P1-6 的自动探测）、`layout.hiddenColumns`、`query.fieldHeuristics`
-  2. CodeGenerateConfigService：project 级服务，启动惰性加载 + 文件变更失效（参照 I18nCacheManager 的缓存纪律），未配置时回退现有硬编码默认值
-  3. DengqiMes 落一份真实配置（含 sys.dengqi.auth/home 模块的正确落位——GATE-D：先在 DengqiMes 确认 sys 模块 Controller/Moc 实际目录口径）
-- **验收标准**：无配置文件时行为与上一版完全一致（回归基线零 diff）；有配置时映射生效
-- **测试**：runIde 验证 + 基线 diff
-- **风险**：中低；注意配置解析失败要回退默认并告警，不能中断生成
-
-### P2-5 [预留] 类型映射精度增强
-- [ ] 完成
+### P2-5 [预留] 类型映射精度增强 ✅（2026-09-18，2.0.38——预留号顺延：2.0.37 被并发「URL 搜索空锁修复」占用）
+- [x] 完成
 - **前置（GATE-E）**：统计 DengqiMes 既有 Moc XML 的 type 取值词表（框架实际支持哪些类型名、长度格式），按真实词表定映射，不臆造；现状 moc.ftl:5 直接输出 `${field.type}`
 - **现状证据**：DatabaseMetadataUtil.getType:61-82 把 bigint/decimal(19,4)/tinyint(1)/enum 全部退化为 int/number/string；TableParser.java:64-68 length 只取第一个数字（decimal(19,4) → 19 丢 scale）
-- **改动点**：按 GATE-E 词表重写 getType 与 length 提取（保留 scale），DDL→Moc 类型映射表进 P2-4 的配置
+- **改动点**：按 GATE-E 词表重写 getType 与 length 提取（保留 scale），DDL→Moc 类型映射表进 P2-4 的配置（P2-4 已搁置——映射表随本项硬编码进 `TableParser.getType`，外置待 P2-4 重启）
 - **验收标准**：含 bigint/decimal(19,4)/tinyint(1)/date/datetime/enum 字段的表，生成 Moc 与项目既有 Moc 惯例一致
 - **测试**：单测（映射表全覆盖）+ 需真实验证（与既有 Moc 抽样比对）
 - **风险**：低
+- **执行记录**：开发委托子代理两轮（开发→编译→单测 + 回归补修），主会话独立复跑（编译 EXIT=0、全量 86 例 0 失败）+ 核心 diff 逐处审查。**GATE-E 词表关键结论（DengqiMes 1245 个 Moc 统计）**：主流族 string 7427/int 6052/datetime 1724/enum 459/decimal 109/date 58/float 50/timestamp 22；bigint 主键 id 全库 1113 例中 **1109=int**（long 仅 4 杂族）→ bigint→int 定案；**enum 100% 带 enum= 属性**且字典 code 主流=字段名（statusdsp/defaultlanguage 变体，DDL 推不出真实字典 code，字段名为默认可手改）；decimal scale 表达形态 `length="18,4"`（16 例）/`"18"`（12 例）、81/109 不带 length；varchar(40)/String(239)/numeric/tinyint/agentid/note 均杂族笔误。**关键发现**：P1-2 后 DB 直读已同源 TableParser（DatabaseMetadataUtil.java:127 SHOW CREATE TABLE 直喂 parseCreateTable），`DatabaseMetadataUtil.getType` 成零调用死代码——随版删除（删前 grep 复核），「重写 getType」实际落点=TableParser.getType。**实现**：getType 按词表重写（输出统一小写，default 由原样返回改兜底 string）；length 保留 scale（"P,S"，无 scale 仅 P，int(11)/varchar(64) 不变）；enum 列写 enumRef=列名小写、模板 `enum="${field.enumRef}"`；正则兜底同款修复维持 P1-9 双路径一致；moc.ftl length 输出条件严格限定 string|decimal+判空（**红线：不可改成非空即输出**——int(11)/datetime 的 map length 有值但存量/基线均不输出；判空须 `?string`——FreeMarker 2.3.33 对 Integer×String 的 `!=` 抛 Can't compare，编辑回写路径 length 是 Integer，子代理以证据纠正任务书原文）；easyuiClass 启发式联动 decimal/float→numberbox。**随版修两处编辑链路回归（本项引入/暴露）**：① decimal(P,S) 行编辑 `Integer.parseInt("19,4")` 崩溃（旧版对 datetime 等空串 length 同样会崩）——parseDialogLength 取精度部分 / resolveEditedLength 未改长度原样带回 "P,S"（scale 不因编辑往返丢失）；② 编辑回写白名单重建丢 enumRef——按键存在透传；纯函数 6 例单测。**基线零漂移程序化锁定**：MocTemplateGoldenTest 4 例（基线 DDL→新解析→新模板渲染与基线 Moc 件字节级相等 + int/datetime 不输出 length 红线 + Integer length 回归 + enum 端到端）。单测 73→86。**真实验证（用户，DDL 粘贴全类型核对）**：bigint→int、decimal 19,4/10,2 保留 scale、enum 带 enum=属性、date/datetime/timestamp/float/tinyint 归位、decimal 行 easyui-numberbox、编辑往返不崩不丢——全部通过。**版本与提交**：2.0.37 被并发会话（URL 搜索空锁修复，17:48 已发版）占用，本项顺延 2.0.38（符合版本号顺延规则）；工作副本两笔未提交变更经用户拍板**一笔混合提交**。
 
 ### P2-6 [预留 2.1.0] Imp mapper 导入列定义骨架（可选增强）
 - [ ] 完成
@@ -391,8 +382,8 @@
 | GATE-A | 导出方法默认生成还是做成开关 | P1-4 | ✅ 已确认：导出默认生成；框架版本适配独立成 P1-6 |
 | GATE-B | i18n key 前缀/后缀规则 | P2-1 → P2-2 | ✅ 已确认：`<模块 i18n 前缀>.<gridName 小写>grid?.<field>`；P2-1 保留只读核对 |
 | GATE-C | 菜单 4 表 insert 真实样例与 ID 策略 | P2-3 | ✅ 已确认（2026-09-18，dengqimesv3 实证）：四表 `sys_menu`(code=页面名/useflag=1/icon-blank/i18ntype='zh_CN'/functionurl=./<folder>/<ObjectName>) + `sys_menu_fun`(ID=FID 全局号、PID=菜单id、pagei18nid=661、公共按钮复用 i18n id) + `sys_res_i18n`(KEY=`com.zhiyin.mes.menu.<蛇形>` 反引号、TYPE=menu、maintainer='zhiyin') + `sys_res_i18n_type`(**三语言** zh_CN/zh_TW/en_US，ID 与 i18n 表共享全局号段)；按钮集合跟勾选项联动（默认刷新75+导出80，勾导入加导出模板84+导入454）；**ID 用幂等查 MAX 的 SQL 动态取号**（fun 行 INSERT...SELECT FROM sys_menu 按 code 反查 PID 防孤儿、NOT EXISTS 按 PID+CODE 判重；type 行按 KEY 反查、按 PID+TYPE 判重），pid/seq 留 TODO 人工填；菜单名 zh_TW/en_US 百度翻译自动填、失败 TODO。号段参考（取证时）：menu 1666 / fun 4036 / i18n 共享段 7003 |
-| GATE-D | DengqiMes sys 模块（sys.dengqi.auth/home）Controller/Moc 实际目录口径 | P2-4 | 待办（P2-4 开工时核对） |
-| GATE-E | Moc XML type 词表（统计真实项目既有值） | P2-5 | 待办（P2-5 开工时统计） |
+| GATE-D | DengqiMes sys 模块（sys.dengqi.auth/home）Controller/Moc 实际目录口径 | P2-4（已搁置） | ✅ 已核对（2026-09-18，结论归档文末搁置区）：sys 两模块均非生成器目标、app 模块惯例与默认一致 |
+| GATE-E | Moc XML type 词表（统计真实项目既有值） | P2-5 | ✅ 已统计（2026-09-18，DengqiMes 1245 个 Moc）：主流 string 7427/int 6052/datetime 1724/enum 459/decimal 109/date 58/float 50；bigint 主键 id 1109/1113=int；enum 100% 带 enum=（code 主流=字段名）；decimal scale 形态 length="18,4"；varchar/String/long/numeric/tinyint 为杂族——映射表与依据见 P2-5 执行记录 |
 | GATE-F | Layout 中实际出现的 easyuiClass 枚举清单 | P3-1 | 待办（P3-1 开工时 grep） |
 | GATE-G | 传统 Java Web 验证项目路径 | P1-3 | ✅ 已确认：`E:\view\SplashMes\webproj\com.zhiyin.mes.splash.project` |
 | GATE-H | 主从页模板对照页（选一张 DengqiMes 真实主从页） | P4-3 | 待办（P4-3 开工时选） |
@@ -403,7 +394,7 @@
 阶段0 ──→ P1-1 ──→ P1-3 / P3-5（依赖结果汇总机制）
               ├──→ P1-2 ──→ P1-5（连接对话框同域）；P1-7 与 P1-2 同域，建议同版
               ├──→ P1-4 ──→ P1-6（模板条件结构先行）──→ P2-6（导入链路）
-阶段0 ──→ P2-1(GATE-B 已确认) ──→ P2-2 ──→ P2-4（i18n 前缀进配置）
+阶段0 ──→ P2-1(GATE-B 已确认) ──→ P2-2 ──→ P2-4（i18n 前缀进配置；已搁置移文末）
 P2-3 / P2-5 独立，可与 P1 并行
 P1-8 / P1-9 独立（P1-9 核查型，结论反哺 P0-2 单测与基线重采）
 阶段3 各项独立（P3-5 依赖 P1-1+P3-3）
@@ -419,3 +410,25 @@ P1-8 / P1-9 独立（P1-9 核查型，结论反哺 P0-2 单测与基线重采）
 | 2 | 6 | 5-8 天 |
 | 3 | 6 | 4-6 天 |
 | 4 | 4 | 6-10 天 |
+
+---
+
+## 搁置区（用户决定延后的项）
+
+### P2-4 [搁置 2026-09-18] 约定外置：.zhiyin/codegen.properties
+- [ ] 完成（已移出「第一个未勾选项」优先序，重启需用户明示）
+- **现状证据**：模块名特殊映射硬编码（MyPropertiesUtil.java:614-624：system→sysadm、configure/v2→basic，属其他项目口径）；默认隐藏列/超管列在两个模板头部重复硬编码（BaseQueryTypeLayout.ftl:1-3、BaseQueryTypeMoc.ftl:1-3）；查询字段启发式硬编码（DataModelGenerator.java:358-367）
+- **改动点**：
+  1. 定义 `.zhiyin/codegen.properties` 配置项：`module.folder.mapping.*`（模块名→folder）、`i18n.prefix.*`（模块→key 前缀，服务 P2-2）、`export.framework`（easyexcel/easyexcel2/auto，兜底 P1-6 的自动探测）、`layout.hiddenColumns`、`query.fieldHeuristics`
+  2. CodeGenerateConfigService：project 级服务，启动惰性加载 + 文件变更失效（参照 I18nCacheManager 的缓存纪律），未配置时回退现有硬编码默认值
+  3. DengqiMes 落一份真实配置（含 sys.dengqi.auth/home 模块的正确落位——GATE-D：先在 DengqiMes 确认 sys 模块 Controller/Moc 实际目录口径）——**已被 GATE-D 核对推翻，重启时需重定形态**
+- **验收标准**：无配置文件时行为与上一版完全一致（回归基线零 diff）；有配置时映射生效
+- **测试**：runIde 验证 + 基线 diff
+- **风险**：中低；注意配置解析失败要回退默认并告警，不能中断生成
+- **GATE-D 核对结论（2026-09-18，主会话实证，未耗发版）**：
+  - `sys.dengqi.auth`：无 `etc/business` 目录（webapp 仅 WEB-INF/view/MesRoot 登录视图）——非生成器目标模块
+  - `sys.dengqi.home`：`layout/` 空目录（0 个 xml）；`model/` 下 80 个 xml 全为 Quality/Device/Mold 等模块拷贝引用杂族——首页聚合模块，不产出自己的业务页，非生成器目标
+  - 11 个 `app.dengqi.*` 模块 folder 惯例全部 = `capitalize(simpleName)`（order→layout/Order+model/Order、wms→Wms、technics→Technics、basic 主流族 Basic 另存历史杂族 sysadm/system）——与现有默认行为完全一致
+  - 结论：硬编码映射 system→sysadm / wms2→wms / technics2→technics / configure→basic / v2→basic 全属其他项目口径，DengqiMes 无非默认口径可外置，「DengqiMes 落真实配置」失去前提
+- **搁置时未决的口径分叉（重启时先拍板）**：① 改动点 3 形态（插件仓库 codegen.properties.example 模板 vs DengqiMes 硬放一份等价默认值文件）；② module.folder.mapping 作用域（仅 codegen 链路：CodeGenerateService/I18nGenerateService/DataModelGenerator vs getSimpleModuleName 全局生效含翻译对话框/Feign 查找/工具窗口）
+- **对 P2-5 的影响**：P2-5 原文「映射表进 P2-4 的配置」随本项搁置改为硬编码进插件，外置待本项重启

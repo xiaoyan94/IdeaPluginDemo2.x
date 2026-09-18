@@ -6,8 +6,8 @@ import org.junit.Test
 
 /**
  * P0-2 纯逻辑单测护栏：TableParser.parseCreateTable / parseDQL 当前行为快照。
- * 断言一律以 2.0.24 实测行为为准（哪怕有瑕疵——如 decimal(19,4) 丢 scale、datetime length 为空串——先锁定）；
- * 后续改动（如 P2-5 类型映射增强）须显式更新断言并在提交信息中说明。
+ * 断言以 2.0.24 实测行为为准锁定（decimal(19,4) 丢 scale 等瑕疵已随 P2-5 显式更新——
+ * GATE-E 词表：DengqiMes 1245 个既有 Moc XML 统计定案，decimal→decimal 且 length 保留 scale）。
  * 样例取自 TableParser.java:218 main() 的 biz_product DDL 与 DQL 原文。
  */
 class TableParserTest {
@@ -126,14 +126,14 @@ class TableParserTest {
             arrayOf("defaultwarehouse", "string", "64", "", "false", "true"),
             arrayOf("defaultstorage", "string", "64", "", "false", "true"),
             arrayOf("issync", "int", "11", "", "false", "true"),
-            arrayOf("price", "number", "19", "", "false", "true"),          // decimal→number，长度只取 19，scale(4) 丢失【P2-5 待改】
-            arrayOf("saleprice", "number", "10", "销售单价", "false", "true"),
-            arrayOf("processingprice", "number", "19", "", "false", "true"),
+            arrayOf("price", "decimal", "19,4", "", "false", "true"),       // P2-5 类型映射精度增强，快照显式更新：decimal→decimal+length 保留 scale（旧：number/19）
+            arrayOf("saleprice", "decimal", "10,2", "销售单价", "false", "true"),
+            arrayOf("processingprice", "decimal", "19,4", "", "false", "true"),
             arrayOf("packrulequantity", "string", "32", "包规数量", "false", "true"),
             arrayOf("minstock", "string", "16", "最低库存", "false", "true"),
             arrayOf("maxstock", "string", "16", "最高库存", "false", "true"),
             arrayOf("property", "string", "32", "物料属性", "false", "true"),
-            arrayOf("weight", "number", "10", "产品重量", "false", "true"),
+            arrayOf("weight", "decimal", "10,4", "产品重量", "false", "true"),
             arrayOf("weightunit", "string", "32", "单重单位", "false", "true"),
             arrayOf("unit", "string", "32", "基础单位", "false", "true"),
             arrayOf("pickingmethod", "string", "32", "领料方式", "false", "true"),
@@ -143,7 +143,7 @@ class TableParserTest {
             arrayOf("deliveryadvtime", "int", "11", "隔离期", "false", "true"),
             arrayOf("timeunit", "string", "32", "时间单位", "false", "true"),
             arrayOf("colourid", "int", "11", "关联颜色ID", "false", "true"),
-            arrayOf("laborused", "number", "11", "人力资源", "false", "true"), // decimal(11,3)→number 长度 11
+            arrayOf("laborused", "decimal", "11,3", "人力资源", "false", "true"), // P2-5：decimal(11,3)→decimal，length="11,3"
             arrayOf("delflag", "int", "2", "删除标识", "false", "true"),
         )
         columns.forEachIndexed { i, col ->
@@ -262,6 +262,195 @@ class TableParserTest {
             assertEquals("备注，含'引号'与,逗号", columns[0]["comment"])
             assertEquals("name", columns[1]["name"])
             assertEquals("名称", columns[1]["comment"])
+        }
+    }
+
+    /** P2-5：getType GATE-E 词表全覆盖——映射不得臆造，逐项对应 DengqiMes 1245 个 Moc XML 统计结论 */
+    @Test
+    fun getType_gateEVocabulary_fullCoverage() {
+        // string 族（string 7427 例主流；词表无 text 原名）
+        assertEquals("string", TableParser.getType("varchar"))
+        assertEquals("string", TableParser.getType("char"))
+        assertEquals("string", TableParser.getType("text"))
+        assertEquals("string", TableParser.getType("tinytext"))
+        assertEquals("string", TableParser.getType("mediumtext"))
+        assertEquals("string", TableParser.getType("longtext"))
+        // 未知类型兜底 string（json/blob 等，与旧 default 行为一致）
+        assertEquals("string", TableParser.getType("json"))
+        assertEquals("string", TableParser.getType("blob"))
+        // int 族（bigint 主键 id 全库 1113 例中 1109 为 int，long 仅 4 例杂族）
+        assertEquals("int", TableParser.getType("int"))
+        assertEquals("int", TableParser.getType("integer"))
+        assertEquals("int", TableParser.getType("tinyint"))
+        assertEquals("int", TableParser.getType("smallint"))
+        assertEquals("int", TableParser.getType("mediumint"))
+        assertEquals("int", TableParser.getType("bigint"))
+        assertEquals("int", TableParser.getType("bit"))
+        // decimal 独立类型（不再折算 number，词表 109 例实证）
+        assertEquals("decimal", TableParser.getType("decimal"))
+        // date 独立类型（修正旧 DatabaseMetadataUtil 把 DATE 归 datetime 的退化，58 例）
+        assertEquals("date", TableParser.getType("date"))
+        // datetime 族（datetime 1724 主流 vs timestamp 22 杂族；time 词表 0 例沿用旧映射不臆造）
+        assertEquals("datetime", TableParser.getType("datetime"))
+        assertEquals("datetime", TableParser.getType("timestamp"))
+        assertEquals("datetime", TableParser.getType("time"))
+        // float 族（float 50 例、double 0 例）
+        assertEquals("float", TableParser.getType("float"))
+        assertEquals("float", TableParser.getType("double"))
+        // enum（459 例 100% 带 enum= 属性，属性值由模板层经 enumRef 输出）
+        assertEquals("enum", TableParser.getType("enum"))
+        // 大小写不敏感，输出一律小写
+        assertEquals("enum", TableParser.getType("ENUM"))
+        assertEquals("decimal", TableParser.getType("DECIMAL"))
+        assertEquals("int", TableParser.getType("BIGINT"))
+        assertEquals("datetime", TableParser.getType("DATETIME"))
+        assertEquals("string", TableParser.getType("VARCHAR"))
+        // null 兜底
+        assertEquals("", TableParser.getType(null))
+    }
+
+    /**
+     * P2-5：映射精度端到端——bigint/tinyint(1)→int、decimal 三形态（P,S / 仅 P / 裸）、
+     * date/datetime/timestamp、enum（enumRef=列名小写）、float/char/text/json、大写输入小写输出。
+     */
+    @Test
+    fun parseCreateTable_typePrecision_mappingAndLength() {
+        val ddl = "CREATE TABLE `t_type_demo` (\n" +
+                "  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',\n" +
+                "  `flag` tinyint(1) DEFAULT '0',\n" +
+                "  `price` decimal(19,4) DEFAULT NULL,\n" +
+                "  `rate` decimal(18) DEFAULT NULL,\n" +
+                "  `amount` decimal DEFAULT NULL,\n" +
+                "  `d` date DEFAULT NULL,\n" +
+                "  `dt` datetime DEFAULT NULL,\n" +
+                "  `ts` timestamp NULL DEFAULT NULL,\n" +
+                "  `status` enum('0','1','2') DEFAULT '0',\n" +
+                "  `ratio` float DEFAULT NULL,\n" +
+                "  `ratio2` double(10,2) DEFAULT NULL,\n" +
+                "  `code` char(10) DEFAULT NULL,\n" +
+                "  `body` text,\n" +
+                "  `extra` json DEFAULT NULL,\n" +
+                "  `UC_STATUS` ENUM('A','B') DEFAULT NULL,\n" +
+                "  `UC_PRICE` DECIMAL(19,4) DEFAULT NULL,\n" +
+                "  `UC_ID` BIGINT DEFAULT NULL,\n" +
+                "  PRIMARY KEY (`id`)\n" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+
+        val byName = TableParser.parseCreateTable(ddl)
+                .associate { it["name"] as String to it }
+
+        assertEquals("PRIMARY KEY 行不进结果，17 列齐全", 17, byName.size)
+        // int 族：bigint 主键与 tinyint(1) 均为 int
+        byName["id"]!!.let {
+            assertEquals("int", it["type"]); assertEquals("20", it["length"])
+        }
+        byName["flag"]!!.let {
+            assertEquals("int", it["type"]); assertEquals("1", it["length"])
+        }
+        // decimal 三形态：P,S → "P,S"；仅 P → "P"；裸 decimal → 空串
+        byName["price"]!!.let {
+            assertEquals("decimal", it["type"]); assertEquals("19,4", it["length"])
+        }
+        byName["rate"]!!.let {
+            assertEquals("decimal", it["type"]); assertEquals("18", it["length"])
+        }
+        byName["amount"]!!.let {
+            assertEquals("decimal", it["type"]); assertEquals("", it["length"])
+        }
+        // 时间族：date 独立，datetime/timestamp 归 datetime，均无 length
+        byName["d"]!!.let {
+            assertEquals("date", it["type"]); assertEquals("", it["length"])
+        }
+        byName["dt"]!!.let {
+            assertEquals("datetime", it["type"]); assertEquals("", it["length"])
+        }
+        byName["ts"]!!.let {
+            assertEquals("datetime", it["type"]); assertEquals("", it["length"])
+        }
+        // enum：type=enum + enumRef=列名小写（字典 code 默认字段名，用户可手改）
+        byName["status"]!!.let {
+            assertEquals("enum", it["type"]); assertEquals("", it["length"])
+            assertEquals("status", it["enumRef"])
+        }
+        // float 族
+        byName["ratio"]!!.let {
+            assertEquals("float", it["type"]); assertEquals("", it["length"])
+        }
+        byName["ratio2"]!!.let {
+            assertEquals("float", it["type"]); assertEquals("10,2", it["length"])
+        }
+        // char→string 带 length；text→string 无 length；json 未知→string
+        byName["code"]!!.let {
+            assertEquals("string", it["type"]); assertEquals("10", it["length"])
+        }
+        byName["body"]!!.let {
+            assertEquals("string", it["type"]); assertEquals("", it["length"])
+        }
+        byName["extra"]!!.let {
+            assertEquals("string", it["type"]); assertEquals("", it["length"])
+        }
+        // 大写输入 → 小写输出；enumRef 取列名小写
+        byName["uc_status"]!!.let {
+            assertEquals("enum", it["type"]); assertEquals("uc_status", it["enumRef"])
+        }
+        byName["uc_price"]!!.let {
+            assertEquals("decimal", it["type"]); assertEquals("19,4", it["length"])
+        }
+        byName["uc_id"]!!.let {
+            assertEquals("int", it["type"])
+        }
+        // enumRef 仅 enum 列携带，其余列无此键（键集合口径：普通列恒 6 键）
+        assertTrue("enumRef 仅 enum 列携带",
+                TableParser.parseCreateTable(ddl).count { it.containsKey("enumRef") } == 2)
+    }
+
+    /**
+     * P2-5：片段化主路径与正则兜底产物一致（畸形 DDL 触发兜底 + 反射直调兜底实现双重验证）。
+     * 兜底路径两处 P1-9 前遗留形态不属本项范围、断言口径相应收窄：
+     * 1) nullable 正则 `[^,]+` 在 int(11) 内逗号处截断致 NOT NULL 检测失效——样例全列可空避开；
+     * 2) 单行形态 comment 正则无行界感知，表名会抢走首列 COMMENT（P1-9 的修复动机本身）——
+     *    单行形态只断言 P2-5 改动面（name/type/length/enumRef），多行形态做全量相等。
+     */
+    @Test
+    fun parseCreateTable_dualPath_decimalEnum_consistent() {
+        val ddl = "CREATE TABLE `t_dual_demo` (\n" +
+                "  `id` int(11) COMMENT 'ID',\n" +
+                "  `price` decimal(19,4) COMMENT '单价',\n" +
+                "  `status` enum('0','1') COMMENT '状态',\n" +
+                "  `name` varchar(64) COMMENT '名称'\n" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+
+        val reflection = TableParser::class.java.getDeclaredMethod("parseCreateTableByRegex", String::class.java)
+        reflection.isAccessible = true
+
+        for ((form, singleLine) in listOf(ddl to false, ddl.replace("\n", " ") to true)) {
+            // 畸形 DDL（列定义体收尾括号缺失）→ extractColumnBody 返回 null → 走正则兜底
+            val malformed = form.replaceFirst(Regex("\\) ENGINE"), " ENGINE")
+            val mainPath = TableParser.parseCreateTable(form)
+            val fallbackViaMalformed = TableParser.parseCreateTable(malformed)
+            @Suppress("UNCHECKED_CAST")
+            val fallbackByReflection = reflection.invoke(null, form) as List<Map<String, Any>>
+
+            if (singleLine) {
+                // 单行形态：兜底 comment 归属错位为 P1-9 前遗留（表名抢首列 COMMENT），只钉 P2-5 改动面
+                fun List<Map<String, Any>>.p2d5Face() = map { listOf(it["name"], it["type"], it["length"], it["enumRef"]) }
+                assertEquals("单行形态 P2-5 改动面（name/type/length/enumRef）双路径一致",
+                        mainPath.p2d5Face(), fallbackViaMalformed.p2d5Face())
+                assertEquals("单行形态 P2-5 改动面：反射直调兜底一致",
+                        mainPath.p2d5Face(), fallbackByReflection.p2d5Face())
+            } else {
+                assertEquals("兜底（畸形触发）与主路径产物一致（多行形态）", mainPath, fallbackViaMalformed)
+                assertEquals("兜底（反射直调）与主路径产物一致（多行形态）", mainPath, fallbackByReflection)
+            }
+
+            // P2-5 改动面逐键钉死：type/length/enumRef（status 携带 enumRef，其余列无）
+            val byName = mainPath.associate { it["name"] as String to it }
+            assertEquals("int", byName["id"]!!["type"])
+            assertEquals("11", byName["id"]!!["length"])
+            assertEquals("decimal", byName["price"]!!["type"])
+            assertEquals("19,4", byName["price"]!!["length"])
+            assertEquals("enum", byName["status"]!!["type"])
+            assertEquals("status", byName["status"]!!["enumRef"])
         }
     }
 

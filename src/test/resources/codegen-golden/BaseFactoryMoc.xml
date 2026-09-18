@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Moc name="BaseFactory" table="biz_base_factory">
+    <FieldDef>
+        <Field name="id" type="int"/>
+        <Field name="code" type="string" length="32"/>
+        <Field name="name" type="string" length="64"/>
+        <Field name="maintainer" type="string" length="128"/>
+        <Field name="maintaintime" type="datetime"/>
+        <Field name="address" type="string" length="255"/>
+        <Field name="country" type="string" length="64"/>
+        <Field name="province" type="string" length="32"/>
+        <Field name="industry" type="string" length="32"/>
+        <Field name="contact" type="string" length="255"/>
+        <Field name="contactphone" type="string" length="32"/>
+        <Field name="longitude" type="string" length="32"/>
+        <Field name="latitude" type="string" length="32"/>
+        <Field name="note" type="string" length="255"/>
+        <Field name="delflag" type="int"/>
+        <Field name="defaultlang" type="string" length="32"/>
+        <Field name="creator" type="string" length="128"/>
+        <Field name="createtime" type="datetime"/>
+        <Field name="scode" type="string" length="64"/>
+        <Field name="3rdflag" type="string" length="32"/>
+        <Field name="version" type="string" length="32"/>
+        <Field name="datagettype" type="string" length="12"/>
+        <Field name="status" type="string" length="32"/>
+        <Field name="city" type="string" length="64"/>
+        <Field name="expiredate" type="date"/>
+        <Field name="industrysize" type="string" length="32"/>
+        <Field name="purchaseperiod" type="int"/>
+        <Field name="filename" type="string" length="64"/>
+        <Field name="aliasname" type="string" length="128"/>
+        <Field name="effectdate" type="date"/>
+    </FieldDef>
+</Moc>

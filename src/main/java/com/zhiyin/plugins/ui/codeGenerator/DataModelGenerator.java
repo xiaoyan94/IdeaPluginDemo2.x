@@ -554,7 +554,8 @@ public class DataModelGenerator {
                         return "easyui-datebox";
                     } else if (type.equals("datetime")) {
                         return "easyui-datetimebox";
-                    } else if (type.equals("number") || type.equals("int")) {
+                    } else if (type.equals("number") || type.equals("decimal") || type.equals("float") || type.equals("int")) {
+                        // P2-5：decimal 不再折算 number、float 新入词表——直连分支需并列，否则 decimal 字段漏 numberbox
                         return "easyui-numberbox";
                     } else {
                         return "";
@@ -577,7 +578,9 @@ public class DataModelGenerator {
         if (field != null) {
             fieldModel.setName((String) field.get("name"));
             fieldModel.setType((String) field.get("type"));
-            fieldModel.setLength(field.get("length") != null ? Integer.parseInt(field.get("length").toString()) : 0);
+            // P2-5：length 可能为 "P,S"（decimal 保留 scale）或空串（datetime/enum 等）——只取精度部分
+            // 供对话框整数绑定（旧 parseInt 对两者均抛 NumberFormatException），scale 由回写侧带回
+            fieldModel.setLength(parseDialogLength(field.get("length")));
             fieldModel.setComment((String) field.get("comment"));
             fieldModel.setRequired(field.get("isRequired") != null && "true".equals(field.get("isRequired").toString()));
             fieldModel.setQueryField(field.get("isQueryField") != null && "true".equals(field.get("isQueryField").toString()));
@@ -588,13 +591,17 @@ public class DataModelGenerator {
             Map<String, Object> updatedFieldMap = Map.of(
                     "name", updatedField.getName(),
                     "type", updatedField.getType(),
-                    "length", updatedField.getLength(),
+                    "length", resolveEditedLength(field != null ? field.get("length") : null, updatedField.getLength()),
                     "comment", updatedField.getComment(),
                     "isRequired", updatedField.isRequired(),
                     "isQueryField", updatedField.isQueryField(),
                     "isDialogField", updatedField.isDialogField()
             );
             updatedFieldMap = new HashMap<>(updatedFieldMap);
+            // P2-5：enum= 属性透传——原 map 含 enumRef 键则原样带入，编辑往返不丢
+            if (field != null && field.containsKey("enumRef")) {
+                updatedFieldMap.put("enumRef", field.get("enumRef"));
+            }
             if (rowIndex == -1) {
                 fields.add(updatedFieldMap);
             } else {
@@ -603,6 +610,42 @@ public class DataModelGenerator {
             updateTableModel();
             return null;
         });
+    }
+
+    /**
+     * P2-5：编辑字段对话框打开时的长度解析（纯函数，供单测）——length 为 "P,S"（decimal 保留
+     * scale 后的形态）时只取逗号前精度部分；空串/非数字兜底 0（Field.length 为 Int、对话框
+     * 长度输入为整数绑定，scale 无处安放，由 {@link #resolveEditedLength} 在未改动时原样带回）。
+     */
+    static int parseDialogLength(Object length) {
+        if (length == null) {
+            return 0;
+        }
+        String s = length.toString();
+        int comma = s.indexOf(',');
+        if (comma >= 0) {
+            s = s.substring(0, comma);
+        }
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * P2-5：编辑确认回写时的 length 决策（纯函数，供单测）——原 map 的 length 为 "P,S" 且对话框
+     * 长度值等于精度部分（用户未改动长度）时，原样写回 "P,S"，scale 不因编辑往返丢失；用户改了
+     * 长度则按对话框新值（Integer）写回，用户显式改动优先。其余情形（原 length 无逗号/null）按对话框值。
+     */
+    static Object resolveEditedLength(Object originalLength, int dialogLength) {
+        if (originalLength != null) {
+            String s = originalLength.toString();
+            if (s.indexOf(',') >= 0 && dialogLength == parseDialogLength(s)) {
+                return s;
+            }
+        }
+        return dialogLength;
     }
 
     private void generateDataModel() {
