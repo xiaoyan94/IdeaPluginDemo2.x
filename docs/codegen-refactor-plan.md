@@ -6,10 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：P3-1（字段表编辑体验：checkbox 化 + 批量操作 + 下拉）随 **2.1.1** 发版（2026-09-20 ✅，GATE-F 词表已落 gate 表）。下一项 **P3-2 剪贴板 TSV 粘贴导入字段**。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6（阶段 0/1/2 全部完成，P2-4 搁置除外）、P3-1
+- **当前进行到**：P3-2（剪贴板 TSV 粘贴导入字段）随 **2.1.2** 发版（2026-09-20 ✅，2c72dc2 + tag v2.1.2）。下一项 **P3-3 输入合并进主窗体 + 生成前重名校验**。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6（阶段 0/1/2 全部完成，P2-4 搁置除外）、P3-1、P3-2
 - **搁置**：P2-4（2026-09-18 用户决定，见文末搁置区）
-- **未提交变更清单**：无（2.1.1 随 31d5aee feat 提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log、build_runide_p31.log 仍为本机杂项，不随提交。
+- **未提交变更清单**：无（2.1.2 随 2c72dc2 feat 提交，计划看板勾选随后续 chore 提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log、build_runide_p31.log、build_runide_p32.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -279,12 +279,13 @@
 - **风险**：低
 - **执行记录**：开发委托子代理（开发→编译→单测），主会话独立复跑（编译 EXIT=0、全量 100 例 0 失败）+ 全量 diff 审查。**GATE-F 词表实证（DengqiMes src 侧排除 target，属性形态 `easyuiClass="easyui-xxx"`）**：combobox 1940/datebox 824/textbox 596/datetimebox 152/numberbox 115/timespinner 10/validatebox 7/filebox 2/checkbox 1；**combotree 零出现**——计划原文枚举系臆测，剔除；下拉补首项「（空）」（启发式对 int+id 等返回空串，空值合法常用）。实现：`BOOLEAN_COLUMNS` 精确集合（取代旧 `startsWith("is")`）驱三处（getColumnClass 归派/updateTableModel 归一/列头菜单判定）；**关键坑——is* 值类型混合**（DDL/DB 解析路径 String "true"/"false"，computeIfAbsent 启发式与编辑回写 Boolean），布尔列声明 Boolean 列类后混合形态渲染异常，UI 表格层 `normalizeBoolean` 纯函数归一并回写 field map（TableParser 解析层不动，P0-2 快照锁定）；下游消费点逐一核对（CodeGenerateService String.valueOf/Boolean.parseBoolean、layout.ftl `${field.required!'false'}` 与 isDialogField 布尔上下文——后者从 String "false" 潜在 FreeMarker 异常改善为严格正确）；Boolean 渲染器零代码用平台默认（JTable 自带 Boolean 列类复选框渲染，Object.class 的 CustomTableCellRenderer 不覆盖它）；easyuiClass 按列挂 `TableColumn.setCellEditor`（不污染文本列），JComboBox 非 editable、空串渲染「（空）」落值 ""。单测 94→100（normalizeBoolean 边界含空格不 trim 语义、GATE-F 词表精确序断言、BOOLEAN_COLUMNS 守卫）。**runIde 沙箱验证（HaichengMes order 模块，存档 biz_base_factory DDL 30 字段）**：结构断言 16/16（列类派发/150 布尔格全 Boolean/JCheckBox 编辑器 clickCountToStart=1/旧 MouseAdapter 0/header 批菜单监听 1/下拉 10 项非 editable/平台 BooleanRenderer）；真实鼠标事件（java.awt.Robot，窗口激活态）单击进编辑态（editing=true+JCheckBox）勾选提交 true→二击取消提交 false（**这正是 JDK 标准 Boolean 单元格行为，无误触翻转**）；列头右键菜单全选 30→true/反选→false/全 true 态清空→0 true、非布尔列不弹菜单；下拉编辑选 easyui-combobox 即提交（JComboBox 版 DefaultCellEditor 选择即 ActionEvent→stopCellEditing 标准行为）、选「（空）」落空串。**空格切换未能独立断言**——驱动环境焦点噪声（remote-robot 每请求抢焦点+Windows 后台窗口焦点保护，frame.requestFocus/SetForegroundWindow 均敌不过），系 JCheckBox 编辑器平台标准键盘行为、插件未自定义键盘逻辑，记录在案。日志核验：插件 ERROR=0、SlowOperations 断言全部归因平台 WorkspaceFileIndexDataImpl（沙箱索引同步），at com.zhiyin 零命中。**方法论沉淀（robot 驱动 Swing 表格交互）**：① 合成 MouseEvent 三连发（PRESSED+RELEASED+CLICKED）的 CLICKED 会停掉刚开启的表格编辑——验证编辑启动用单发 PRESSED 或走真实 Robot；② 后台窗口点击编辑格必被「窗口激活焦点转移 → CellEditorRemover 过渡态取消」打断，先 setAlwaysOnTop+requestFocus 激活窗口再操作；③ remote-robot 每次 /js/execute 请求间焦点可能被抢，跨调用的交互链对焦点敏感场景不稳定，时序允许时合并到组件级断言（editCellAt+doClick+dispatchEvent）双轨取证。
 
-### P3-2 [预留] 剪贴板 TSV 粘贴导入字段
-- [ ] 完成
+### P3-2 [预留 2.1.2] 剪贴板 TSV 粘贴导入字段 ✅（2026-09-20，2.1.2）
+- [x] 完成
 - **改动点**：新增「从剪贴板粘贴」按钮：解析剪贴板 TSV（需求文档表格直接复制），按列序映射 name/type/comment（首行是表头则自动跳过；type 缺省 string；type 词表宽容映射 varchar→string 等），粘贴前弹确认（覆盖现有 / 追加）
 - **验收标准**：从 Excel 复制 3 列表格粘贴一次成型；脏数据（空行、非法 type）跳过并在确认框提示条数
 - **测试**：runIde 验证 + 单测（TSV 解析容错）
 - **风险**：低
+- **执行记录**：开发委托子代理（开发→编译→单测），主会话独立复跑（编译 EXIT=0、全量 115 例 0 失败）+ 代码审查（词表 22 词与 getType case 输入∪输出逐一对照、import 字母序一处修正）。实现：解析器独立 `utils/TsvFieldParser.java` 纯函数类；type 合法性判定**不靠 getType 兜底**（getType 未知一律落 string 无法区分非法）——显式 22 词表 + 剥括号后查表，映射复用 getType；括号参数提取 length（"19,4" 沿用 P2-5 scale 语义）；表头判定只看第一非空行（前导空行计数后再判，防前导空行把表头判定挤掉）+ 防误杀决策树（col1 命中关键词须叠加 col2 非法类型才判表头——`name/varchar/名称`、`type/int/类型` 真字段首行幸存，有专测）；确认框 YES=覆盖（对齐 DDL 路径 clear+addAll）/NO=追加/CANCEL=不动，计数段无脏数据不显示 0 条噪音；不预填 is*/easyuiClass（走 updateTableModel 既有启发式，与 DDL/DB 路径一致）；孤立 \r 也归一（防老工具残留）；第 4 列及以后忽略（需求表常带「必填」列）。**runIde 沙箱验证（HaichengMes order 模块，robot 驱动）四场景**：① 标准 3 列带表头覆盖导入——确认框「解析到 3 个有效字段（首行表头已跳过）」、表 3 行 orderno/string/50/计划单号·qty/decimal/19,4/数量·status/int//状态，布尔+easyuiClass 启发式生效；② 脏数据（序号列表头+非法 name+非法 type「文本」+空行）+追加——确认框「解析到 2 个有效字段…跳过脏数据 3 行（空行 1、非法 2）」逐字符合、追加 3+2=5 行原行未动；③ 取消——5 行不变；④ 空剪贴板——行为通过（无卡死/无异常弹窗/fields 不变），**通知内容断言降级**（showError 走 Notification 气球，robot 通道抓不到渲染文本；代码走查 3 行 + 组件为仓库既有）。日志：本轮会话（15:00 起）ERROR=0、SlowOperations=0。**robot 通道新坑沉淀 memory**：JS 源码 `\n` 转义被通道破坏（`\t` 幸存）——多行文本 join(String.fromCharCode(10)) 构造；Messages 对话框关闭后 MyDialog 残留 Window 列表（visible=false）——找弹窗必须 isVisible() 过滤。单测 100→115（表头三形态/防误杀、词表边界、空行/CRLF/尾行、单列、第 4 列忽略）。
 
 ### P3-3 [预留] 输入合并进主窗体 + 生成前重名校验
 - [ ] 完成
