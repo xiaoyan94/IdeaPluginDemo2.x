@@ -6,10 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：P3-2（剪贴板 TSV 粘贴导入字段）随 **2.1.2** 发版（2026-09-20 ✅，2c72dc2 + tag v2.1.2）。下一项 **P3-3 输入合并进主窗体 + 生成前重名校验**。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6（阶段 0/1/2 全部完成，P2-4 搁置除外）、P3-1、P3-2
+- **当前进行到**：P2-7（插队）查询页 MES 规范对齐随 **2.1.3** 发版（2026-09-20 ✅）。下一项 **P3-3 输入合并进主窗体 + 生成前重名校验**。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6、P2-7（插队）（阶段 0/1/2 全部完成，P2-4 搁置除外）、P3-1、P3-2
 - **搁置**：P2-4（2026-09-18 用户决定，见文末搁置区）
-- **未提交变更清单**：无（2.1.2 随 2c72dc2 feat 提交，计划看板勾选随后续 chore 提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log、build_runide_p31.log、build_runide_p32.log 仍为本机杂项，不随提交。
+- **未提交变更清单**：无（2.1.3 随 5998c21 feat 提交 + v2.1.3 tag，看板勾选随后 26200be chore 提交）。.kotlin/、buildSrc/out/、out/、build_*.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -262,6 +262,29 @@
 - **测试**：需真实验证（DengqiMes 走一次真实 Excel 导入冒烟）
 - **风险**：中；依赖框架 import 机制细节，做前先反编译核对（mes-jar-decompile skill）
 - **执行记录**：**取证（反编译 ExcelImportService + dengqimesv3 库实证）推翻计划原文字面**——导入链路 = Imp mapper XML（`WEB-INF/etc/business/<Folder>/`，ResourceStreamBuilder 按 TemplateMould/TemplateName 定位）+ **DB 配置行 `utils_base_data_import_define`**（无行 getImportMapper 直接抛「尚未定义」，UNIQUE DataModelCode，id 手工 1..86 → 草稿 MAX+1 动态取号）+ **物理临时表**（insertTempData 直接 insert，列=name 小写+rowno/clientid/factoryid）三件缺一不可；解析期校验实证：required 空/validate 不符/length 超长在 parseDataToList 自动剔行；页面侧 Import()/DownloadTemplate() 走框架通用机制读同一配置表、零改动。**口径拍板（2026-09-20）**：XML+SQL 草稿（插件不执行 SQL）、业务字段全进（排除 9 框架审计列）、isRequired→required；**i18n 属性两轮定稿**：先定「命中 key/未命中省略」，沙箱验证后用户实测海程 order 模块非 datagrid 族（743+269 行）仅「备注」一个精确同值键（python 独立复核属实、非插件 bug），改定「命中 key/未命中兜底 i18n=中文名（getMessage 查不到返回原串等效中文列头）/无 comment 仍省略」。开发委托子代理两轮（初版 + i18n 兜底增量），主会话独立复跑（编译 0、94/94）。**runIde 沙箱真实验证（HaichengMes order 模块 biz_base_factory，GridName=P26Factory，菜单中文名=工厂）**：9+1 件落位（7 件套 + `business/Order/ImpP26FactoryMapper.xml` 直下 + `sql/P26Factory_import_draft.sql`）；Imp mapper 23 列（30−7 在表审计列）逐项符合（required 仅 code、name 小写、无 comment 省略、i18n 命中 note→`com.zhiyin.mes.app.order.note`）；SQL 草稿列序镜像 temp_imp_exception、DataModelName=工厂导入（菜单中文名复用）、表名与 XML 同源；生成模块 `mvn compile -P central,dev` EXIT=0；插件 ERROR=0。**Excel 导入端到端冒烟待补**（用户拍板先发版；需本地起服务 + 库执行草稿 SQL + xlsx 调接口断言 temp 落行，发现问题随下版修）。**附带发现（不立项，记录在案）**：生成时 14 条 SlowOperations 断言全部归因 P1-6 `detectEasyExcel2` EDT 分支（CodeGenerateService.java:893，runReadAction 内 StubIndex 查询；Haicheng 索引状态触发，DengqiMes 沙箱当年未触发）——P2-6 的 i18n 批量在后台 Task 零断言。**方法论沉淀（robot 驱动沙箱）**：runIdeForUiTests 的 license javaagent 必须与真实 IDEA vmoptions 逐字一致（不带 `=jetbrains` 后缀，带了或用旧路径沙箱 ~60-97s 评估弹框退出 exit 7）；robot 协议端点为 `/xpath/component`、`/js/execute`（无 /rpc 前缀）；Rhino JS 走 action 实例 classloader 反射开生成器、模态弹窗 invokeLater 点击 + 轮询填文本防死锁；robot 返回值不回传响应 message、需 throw 才可见。验证产物已清理（10 件 revert 撤 add + 删除 + sql 目录移除，模块 svn status 干净）。
+
+### P2-7 [插队 2.1.3] 查询页 MES 规范对齐（登骐 sync_erp_iqc_fail_log 真实需求驱动）✅（2026-09-20，2.1.3）
+- [x] 完成
+- **背景（2026-09-20 差距分析）**：登骐真实需求（给 sync_erp_iqc_fail_log 开发查询页挂 基础数据-数据同步 下）触发对 2.1.2 的可用性评估。结论：骨架合规（basic 模块落盘路径/URL 链/IncQueryWithParam+menufunc 工具栏/时间范围 from-to 闭环/i18n 三语言/导出均对齐样板 DataSyncController+RcsOrderSyncRecord），但有 4 处规范级缺陷。**口径已拍板（2026-09-20）**：字典走 Service 5 参 queryDaoDataT（mes-dict-column skill，CFR 已证机制）；like **不加** upper（库排序规则忽略大小写，用户拍板）；噪音项（isColumnField 消费/工厂下拉条件渲染/Moc 默认关）与日期预填**本次不做**；菜单 SQL 草稿维持现状（pid/seq TODO）；只升级插件、登骐页面由用户用新版自行生成。
+- **现状证据**：
+  1. statusdsp 空转：BaseQueryTypeLayout.ftl:31-39 对 state/status 字段生成 dsp 显示列，但 BaseQueryTypeService.ftl:56-58 只走 4 参 queryDaoDataT 无字典翻译 → dsp 列永远空白；真实规范 = 5 参 + DictTransformBuilder.setLanguage(...).addDictTransform(pcode, code列, dsp列)（dengqi 2026-09-18 InComingCheckAppService 实例，language 由框架 getParameterMap 自动注入，字典缺条目 dsp 空白无害）
+  2. datetime 裸列：DataModelGenerator.java:383-393（DB 路径）与 :470-480（DDL 路径）内联拼 `select a.x,... from t a` 裸列清单；真实规范 DATE_FORMAT(a.synctime,'%Y-%m-%d %H:%i:%s')（DataSyncMapper.xml:36）
+  3. 无 ORDER BY：真实查询页全部显式排序（DataSyncMapper `order by synctime desc`），失败日志类页面无序直接影响可用性
+  4. Mapper `<if>` 全字段：BaseQueryTypeMapper.ftl:10-27 对全部字段无条件出查询条件（未消费 isQueryField；Layout 查询区只为勾选字段渲染输入）→ 死条件冗长；真实规范只为查询面板实际字段出 `<if>`（DataSyncMapper.xml:5-37 仅 orderno/syncstatus/factoryid/startdate/enddate）
+- **改动点**：
+  1. CodeGenerateService 新增包级静态 `buildAutoSelectSql(tableName, fields)`：datetime/timestamp 列包 `DATE_FORMAT(a.x,'%Y-%m-%d %H:%i:%s') as x`、date 列 `'%Y-%m-%d'`（别名=原列名保持 Map key）；存在 id 字段时尾部追加 `\norder by a.id desc`（无 id 不加）；DMG 两处内联 StringBuilder（:383-393/:470-480）替换为调用；DQL 路径（:511 用户自输 SQL）**不动**。formatSql 对函数内逗号已有负向先行保护（CodeGenerateService.java:938），无需改
+  2. CodeGenerateService 计算 `dictTransformFields`（触发口径=name 小写 endsWith state/status，与 Layout dsp 列同源；pcode=PascalCase(字段名) 占位）传入 dataModel；BaseQueryTypeService.ftl 查询方法按有无可变生成 5 参块：`DictTransformBuilder builder = new DictTransformBuilder().setLanguage(StringUtils.getStringFromMap(params, "language")).addDictTransform(pcode, name, name+"dsp")` + 第 5 参 + `// TODO: 字典 pcode 按实际字典确认（默认 PascalCase 字段名），字典缺条目时 dsp 列空白无害`；StringUtils import 条件从 `generateImport` 扩为 `generateImport || 有字典字段`（DictTransformBuilder import :16 已无条件存在，零新增 import 行）
+  3. BaseQueryTypeMapper.ftl 查询 `<if>` 生成按 `field.isQueryField == "true"` 过滤（queryFields 经 CGS:380-385 已归一 String；time/date 的 from/to 条件同过滤——Layout 只为勾选字段渲染 from/to 输入，两侧口径一致）
+  4. like **不加** upper（用户拍板 2026-09-20）
+- **验收标准**：
+  - 用 `E:\view\DengqiMes\webproj\com.zhiyin.mes.dengqi.project\docs\sql\iqc_incoming_check_upgrade.sql:180-198` 的 sync_erp_iqc_fail_log DDL 模拟生成：Mapper select 含 4 个 DATE_FORMAT 时间列（createtime/maintaintime/lastretrytime/successtime）+ `order by a.id desc`；Service 为 status 出 5 参字典块（pcode=Status + TODO）；`<if>` 仅查询字段
+  - 无 state/status 字段的表：Service 4 参原样（与旧版零漂移）
+  - biz_base_factory 回归：Mapper/Service 基线 diff = 预期有意变化（`<if>` 收窄、status 字典块、DATE_FORMAT/order by），Layout/Html/Controller/Moc/菜单 SQL 零漂移；golden 快照按有意变化更新并在提交说明列明
+  - DengqiMes basic 模块真实验证：生成产物 `mvn compile -P central,dev` 通过（DictTransformBuilder/StringUtils/5 参 queryDaoDataT 编译级实证），验证后 svn revert+删除清理（P2-6 清理纪律）
+- **前置 gate**：实现前先反编译 dengqi 框架 jar 核对 `com.zhiyin.service.dict.DictTransformBuilder`（setLanguage/addDictTransform 签名）与 `BaseService.queryDaoDataT` 5 参重载存在（mes-jar-decompile skill；jar 坐标见 basic pom :33-49：com.zhiyin.mes.framework.dengqi.system / com.zhiyin.mes.springcloud.frame.v2.core）；对不上即停，回来改方案不臆造
+- **测试**：单测（buildAutoSelectSql 三型列/无 id 不加排序/dictTransformFields 触发口径）+ golden 更新 + runIde 沙箱 + 需真实验证（basic 模块编译）
+- **风险**：中低；模板改动全部条件化，无 state/status 字段时 Service 零漂移；金测与基线 diff 锁有意变化
+- **执行记录**：开发委托子代理（前置反编译 gate 三签名全过：`DictTransformBuilder.setLanguage/addDictTransform` 链式、`BaseService` 5 参 `queryDaoDataT`、`StringUtils.getStringFromMap`——jar 为 `com.zhiyin.mes.springcloud.frame.v2.core-1.0.0-*-22-small.jar`，dengqi.system jar 无这三类），主会话独立复跑（编译 EXIT=0、127/127）。**沙箱验证两轮暴露三问题并随版修复**：① `extractTableName` 不认 `CREATE TABLE IF NOT EXISTS`（登骐 docs SQL 原生形态）→ 正则加 `(?:IF\s+NOT\s+EXISTS\s+)?` + 单测三形态（此前这种形态直接被「模型数据为空」拦死）；② 查询字段默认启发式对失败日志类表（无 code/name 结尾列）零命中 → 查询面板空、`<where>` 空，用户拍板「status+时间全勾」→ `defaultQueryField` 纯函数扩两条（status/state 结尾、type=datetime）+ 单测；③ golden caseI 的 api/maintaintime/status 查询字段系子代理手工设值，与真实默认启发式不符（教训：golden dataModel 的勾选态要从真实启发式口径推，不能替用户预设）。**runIde 沙箱真实验证（DengqiMes basic 模块，robot 驱动 DDL 粘贴→GridName=SyncErpIqcFailLog→i18n 追加并生成）**：7 件落位；Mapper 4×DATE_FORMAT + ORDER BY a.id desc + `<where>` 含 4 组 from/to + status 等值；Service 5 参字典块（pcode=Status + TODO）；Layout Title i18nKey 闭环 + 8 个 datetimebox + statusdsp 列；Html menufunc/IncQuery ✓；Controller 旧 7 参导出 ✓；i18n 三语言各 +12 键（含 statusdsp，百度翻译回填）。**真实编译**：产物在 DengqiMes basic 模块 `mvn compile -P central,dev` **EXIT=0**；验证后 7 件 revert 撤 add+删除、三语言 properties 整体 revert（diff 复核仅插件行）。SlowOperations 32 条全归因 `detectEasyExcel2` EDT 分支（P2-6 已记录已知项，非新回归）；插件 ERROR=0。**坑沉淀**：① 上会话残留沙箱 IDE 占 8082 端口 + 文件锁使 prepareSandbox 拷不动新 jar（「旧 jar」假象）——每轮验证前按命令行杀净 + `unzip -p <jar> <class> | grep <方法名>` 验沙箱 jar 内容；② Rhino 双参数 `getMethod` 变参转换不可靠（NoSuchMethodException 误报「旧 jar」），核实方法用 `getDeclaredMethods()` 列名；③ P2-2 Document 写盘延迟：生成后立刻 grep 磁盘会漏追加行（WriteCommandAction 只写 Document，等 auto-save），验盘上状态要留时间窗；④ UiTests 沙箱开项目用 `ProjectUtil.openOrImport(Path, projectToClose, false)`（较 P3-2 时期的做法补全）。单测 115→127（buildAutoSelectSql 8 例含失败日志表 14 列全量断言、collectDictTransformFields、extractTableName 三形态、defaultQueryField、golden caseI/caseJ）；既有 BaseFactory golden 快照零变化。
 
 ---
 
