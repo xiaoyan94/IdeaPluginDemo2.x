@@ -6,6 +6,7 @@ import com.intellij.lang.properties.psi.Property;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
@@ -33,6 +34,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
@@ -133,6 +135,10 @@ public class DataModelGenerator {
         JButton parseSelectSQLButton = new JButton("从查询SQL解析字段");
         parseSelectSQLButton.addActionListener(e -> fetchFieldsFromQuerySQL());
 
+        // P3-2：从剪贴板粘贴 TSV 导入字段（需求文档/Excel 表格直接复制），解析容错见 TsvFieldParser
+        JButton pasteFromClipboardButton = new JButton("从剪贴板粘贴字段");
+        pasteFromClipboardButton.addActionListener(e -> fetchFieldsFromClipboard());
+
         // TODO
         COLUMNS_NAME = new String[]{"name", "type", "length", "comment", "isColumnField", "isQueryField", "isDialogField", "isRequired", "isEditHidden", "easyuiClass"};
         tableModel = new DefaultTableModel(COLUMNS_NAME, 0){
@@ -204,6 +210,7 @@ public class DataModelGenerator {
         buttonPanel.add(queryButton);
         buttonPanel.add(parseCreateSQLButton);
         buttonPanel.add(parseSelectSQLButton);
+        buttonPanel.add(pasteFromClipboardButton);
         buttonPanel.add(addButton);
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
@@ -509,6 +516,57 @@ public class DataModelGenerator {
             } else {
                 MyPluginMessages.showError("操作失败", "请输入有效的 SQL 语句", project);
             }
+        });
+    }
+
+    /**
+     * P3-2：从剪贴板粘贴 TSV 导入字段（需求文档/Excel 表格直接复制）。解析纯函数在
+     * TsvFieldParser（供单测），这里只做剪贴板读取 → 确认框（覆盖/追加）→ 应用。
+     * 不预填 is* 标志与 easyuiClass——留给 updateTableModel 既有启发式兜底，与 DDL/DB 路径行为一致。
+     */
+    private void fetchFieldsFromClipboard() {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            // 剪贴板读取须在 EDT（系统剪贴板同步访问约束），与同族按钮路径一致 invokeLater 包裹
+            String clipboardText = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
+            if (clipboardText == null || clipboardText.trim().isEmpty()) {
+                MyPluginMessages.showError("操作失败", "剪贴板中没有可粘贴的文本，请先从 Excel/需求文档复制字段表格（三列：字段名/类型/说明）。", project);
+                return;
+            }
+
+            TsvFieldParser.TsvParseResult result = TsvFieldParser.parse(clipboardText);
+            if (result.validFields.isEmpty()) {
+                MyPluginMessages.showError("操作失败", "剪贴板内容未解析出有效字段（跳过空行 " + result.blankLines
+                        + " 行、非法行 " + result.invalidLines + " 行）。", project);
+                return;
+            }
+
+            // 确认框计数段按需拼装：无表头/无脏数据时省略对应段，不显示 0 条噪音
+            StringBuilder msg = new StringBuilder("解析到 " + result.validFields.size() + " 个有效字段")
+                    .append(result.headerSkipped ? "（首行表头已跳过）" : "（无表头）")
+                    .append("。");
+            if (result.getSkippedTotal() > 0) {
+                msg.append("跳过脏数据 ").append(result.getSkippedTotal()).append(" 行（");
+                List<String> skipParts = new ArrayList<>();
+                if (result.blankLines > 0) {
+                    skipParts.add("空行 " + result.blankLines);
+                }
+                if (result.invalidLines > 0) {
+                    skipParts.add("非法 " + result.invalidLines);
+                }
+                msg.append(String.join("、", skipParts)).append("）。");
+            }
+            msg.append("\n\n「覆盖现有」清空当前字段后导入；「追加」保留当前字段，在末尾追加。");
+
+            int choice = Messages.showYesNoCancelDialog(project, msg.toString(), "从剪贴板粘贴字段",
+                    "覆盖现有", "追加", "取消", Messages.getQuestionIcon());
+            if (choice == Messages.CANCEL) {
+                return; // 放弃导入，不动 fields
+            }
+            if (choice == Messages.YES) {
+                fields.clear(); // 覆盖：先清后加，行为对齐 DDL 路径
+            }
+            fields.addAll(result.validFields); // 追加：不清 fields 直接加
+            updateTableModel();
         });
     }
 

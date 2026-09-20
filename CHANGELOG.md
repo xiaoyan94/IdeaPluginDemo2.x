@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-20
+
+feat: 生成器支持从剪贴板粘贴 TSV 导入字段（codegen 改造 P3-2）——需求文档/Excel 表格直接复制进字段表
+
+- **新增「从剪贴板粘贴字段」按钮**（读取按钮组末位）：解析剪贴板 TSV，按列序映射 name/type/comment（第 4 列及以后忽略——需求表常带「必填」等附加列）；需求文档表格直接复制即可建字段表，不再依赖 DDL/DB
+- **表头自动跳过**（只看第一个非空行）：col1 非合法标识符（如「字段名」「序号」）判表头；col1 是标识符但命中表头关键词集时须 col2 不是合法类型词才判表头——`name/type/comment` 跳过而真字段首行 `name/varchar/名称`、`type/int/类型` 不误杀；前导空行计数后再判表头
+- **type 词表宽容映射**：空缺省 string；剥括号参数后按 `TableParser.getType` 词表映射（varchar→string、timestamp/time→datetime、tinyint/bigint→int 等）；**非法 type（如「文本」）不靠 getType 兜底**——TSV 校验自带显式 22 词合法词表（getType 未知一律落 string，无法区分合法与非法）；括号参数提取为 length（`varchar(64)`→64、`decimal(19,4)`→"19,4" 沿用 P2-5 scale 语义）
+- **粘贴前确认（覆盖现有/追加/取消）**：确认框展示有效字段数、表头跳过、脏数据计数（空行/非法分列，无脏数据不显示 0 条噪音）；覆盖=清空后导入（对齐 DDL 路径）、追加=保留现有末尾追加、取消不动
+- **脏数据容错**：空行/非法行（name 非法标识符或 type 不在词表）跳过并计数、不中断整体解析；末尾换行的空尾行不算脏数据；全脏数据时错误提示含各计数
+- 解析器独立成 `TsvFieldParser` 纯函数类（无 UI 依赖）；name 小写化对齐 parseCreateTable 出口；不预填 is*/easyuiClass——留给 updateTableModel 既有启发式，与 DDL/DB 路径行为一致
+- 单测 100→115（TsvFieldParserTest 15 例：表头三形态/防误杀边界、type 缺省与词表边界、空行/CRLF/尾行、单列、第 4 列忽略、全量脏数据）；runIde 沙箱验证通过（HaichengMes order 模块：标准 3 列覆盖导入一次成型、脏数据确认框计数逐字符合、追加/取消路径、布尔与 easyuiClass 启发式生效；插件 ERROR=0、SlowOperations 断言 0）
+
 ## [2.1.1] - 2026-09-20
 
 feat: 生成器字段表编辑体验升级（codegen 改造 P3-1，阶段 3 首项）——布尔列复选框化、列头右键批操作、easyuiClass 下拉
@@ -417,7 +429,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.2...HEAD
+[2.1.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.38...v2.1.0
 [2.0.38]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.37...v2.0.38
