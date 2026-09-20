@@ -1,6 +1,7 @@
 package com.zhiyin.plugins.utils
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -457,6 +458,17 @@ class TableParserTest {
     @Test
     fun extractTableName_bizProduct() {
         assertEquals("biz_product", TableParser.extractTableName(BIZ_PRODUCT_DDL))
+    }
+
+    @Test
+    fun extractTableName_ifNotExistsForms() {
+        // P2-7 附带修复：登骐 docs SQL 原生形态 `CREATE TABLE IF NOT EXISTS`，旧正则返回 null
+        val ifNotExistsDdl = "CREATE TABLE IF NOT EXISTS sync_erp_iqc_fail_log (`id` int(11) NOT NULL AUTO_INCREMENT, PRIMARY KEY (`id`))"
+        assertEquals("sync_erp_iqc_fail_log", TableParser.extractTableName(ifNotExistsDdl))
+        // 既有形态回归：普通 / 反引号 / 库名前缀
+        assertEquals("biz_product", TableParser.extractTableName("CREATE TABLE biz_product (id int)"))
+        assertEquals("biz_product", TableParser.extractTableName("CREATE TABLE `biz_product` (id int)"))
+        assertNull(TableParser.extractTableName("CREATE TABLE IF NOT EXISTS no_paren"))
     }
 
     @Test

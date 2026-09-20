@@ -177,4 +177,20 @@ class DataModelGeneratorTest {
         assertEquals(setOf("isColumnField", "isQueryField", "isDialogField", "isRequired", "isEditHidden"),
             DataModelGenerator.BOOLEAN_COLUMNS)
     }
+
+    @Test
+    fun defaultQueryField_heuristics() {
+        // 既有口径：code/name 结尾命中（精确名单在 computeIfAbsent 内先判，此处只测 endsWith 族）
+        assertTrue(DataModelGenerator.defaultQueryField("factoryname", "string"))
+        assertTrue(DataModelGenerator.defaultQueryField("factorycode", "string"))
+        assertEquals(false, DataModelGenerator.defaultQueryField("orderno", "string"))
+        // P2-7 扩展：status/state 结尾、datetime 类型列
+        assertTrue(DataModelGenerator.defaultQueryField("status", "int"))
+        assertTrue(DataModelGenerator.defaultQueryField("syncstatus", "int"))
+        assertTrue(DataModelGenerator.defaultQueryField("maintaintime", "datetime"))
+        // 不命中：失败日志表其余列形态
+        assertEquals(false, DataModelGenerator.defaultQueryField("api", "string"))
+        assertEquals(false, DataModelGenerator.defaultQueryField("retrycount", "int"))
+        assertEquals(false, DataModelGenerator.defaultQueryField("createtime", "string")) // 非 datetime 类型不因名字命中
+    }
 }

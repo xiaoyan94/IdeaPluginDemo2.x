@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-09-20
+
+feat: 查询页生成对齐 MES 传统规范（codegen 改造 P2-7，登骐 sync_erp_iqc_fail_log 真实需求驱动插队）——字典翻译、时间列格式化、默认排序、查询条件收窄四缺陷修复
+
+- **背景**：登骐真实需求（给 sync_erp_iqc_fail_log 开发查询页挂「基础数据-数据同步」下）触发 2.1.2 可用性差距分析：骨架合规（basic 模块落盘路径/URL 链/查询面板/工具栏/i18n/导出均对齐 DataSyncController+RcsOrderSyncRecord 样板），但四处规范级缺陷导致生成页不能直接用
+- **字典翻译（statusdsp 不再空转）**：Layout 对 state/status 字段生成 dsp 显示列但 Service 只走 4 参 queryDaoDataT 无翻译 → dsp 列永远空白；现存在此类字段时 Service 生成 5 参 `queryDaoDataT(..., DictTransformBuilder)`（`.setLanguage(StringUtils.getStringFromMap(params,"language")).addDictTransform(pcode, field, field+"dsp")`，pcode 默认 PascalCase 字段名 + TODO 提示人工确认），前置反编译核实框架 jar（springcloud.frame.v2.core）三签名存在；无此类字段时 Service 与旧版字节级零漂移
+- **时间列 DATE_FORMAT**：DB/DDL 路径自动拼的 select 由裸 `a.createtime` 改为 `DATE_FORMAT(a.createtime,'%Y-%m-%d %H:%i:%s') as createtime`（date 类型到日、datetime/timestamp 到秒，别名=原列名保持 Map key），对齐 DataSyncMapper 口径；构造收敛为单一 `buildAutoSelectSql`（DQL 自输 SQL 不动；formatSql 负向先行已保护函数内逗号）
+- **默认排序**：select 存在 id 字段时尾部追加 `order by a.id desc`（失败日志类页面无序不可用），无 id 不加
+- **Mapper `<if>` 收窄**：查询条件只为勾选了「查询」的字段生成（此前全部字段都出 `<if>` 死条件，与 Layout 查询区渲染口径不一致）；like 加 upper 经用户拍板不做（库排序规则忽略大小写）
+- **查询字段默认启发式扩展**（`defaultQueryField` 纯函数）：新增 status/state 结尾字段、type=datetime 列两条命中——失败日志类表（无 code/name 结尾列）此前默认零查询条件、查询面板全空（用户拍板 status+时间全勾）
+- **附带修复：`CREATE TABLE IF NOT EXISTS` 表名提取**：`TableParser.extractTableName` 正则不认该形态（登骐 docs SQL 原生写法）返回 null → 生成被「模型数据为空」拦死；正则加 `(?:IF\s+NOT\s+EXISTS\s+)?`
+- 单测 115→127（buildAutoSelectSql 8 例含失败日志表 14 列全量断言、collectDictTransformFields 口径、extractTableName 三形态、defaultQueryField 启发式、golden caseI/IQ 场景+caseJ 零漂移护栏）；既有 BaseFactory golden 快照零变化；runIde 沙箱真实验证（DengqiMes basic 模块 robot 驱动全链路）+ 产物在登骐 basic 模块 `mvn compile -P central,dev` EXIT=0，验证后工作副本已还原干净
+
 ## [2.1.2] - 2026-09-20
 
 feat: 生成器支持从剪贴板粘贴 TSV 导入字段（codegen 改造 P3-2）——需求文档/Excel 表格直接复制进字段表
@@ -429,7 +442,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.2...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.3...HEAD
+[2.1.3]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.38...v2.1.0

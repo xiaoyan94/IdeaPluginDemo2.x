@@ -384,6 +384,9 @@ public final class CodeGenerateService {
             }
         });
         dataGrid1.put("queryFields", queryFields);
+        // P2-7：字典翻译字段（name 小写 endsWith state/status，与 Layout dsp 列同口径）放根变量，
+        // BaseQueryTypeService.ftl 按有无分叉 5 参 queryDaoDataT 字典块；无此类字段时模板 else 分支与旧版零漂移
+        dmLayout.put("dictTransformFields", collectDictTransformFields(fields));
 
         /*List<Map<String, Object>> dialogFields = new ArrayList<>(fields);
         int colEachRow = 2;
@@ -907,6 +910,64 @@ public final class CodeGenerateService {
             return false;
         }
         return found.get();
+    }
+
+    /**
+     * P2-7：生成器自动拼装查询页 select（DB/DDL 两路径共用，DQL 用户自输 SQL 不走此方法）。
+     * <p>MES 规范对齐（DataSyncMapper 口径）：datetime/timestamp 列包 DATE_FORMAT 到秒（别名=原列名保持 Map key）、
+     * date 列 DATE_FORMAT 到日（必须精确 equals，contains 会把 datetime 误匹配进日期分支）；
+     * 存在 name 小写等于 id 的字段时尾部追加 order by a.id desc（失败日志类页面无序不可用），无 id 不加。</p>
+     */
+    public static String buildAutoSelectSql(String tableName, List<Map<String, Object>> fields) {
+        StringBuilder sqlBuilder = new StringBuilder("select ");
+        for (int i = 0; i < fields.size(); i++) {
+            Map<String, Object> field = fields.get(i);
+            String name = String.valueOf(field.get("name"));
+            // TableParser.getType 已把 DDL 类型归一（datetime/timestamp/time → datetime、date → date），
+            // 此处 trim+toLowerCase 再比较是防御其他来源（剪贴板 TSV/手工编辑）的大小写与空白形态
+            String type = String.valueOf(field.get("type")).trim().toLowerCase();
+            if ("datetime".equals(type) || "timestamp".equals(type)) {
+                sqlBuilder.append("DATE_FORMAT(a.").append(name).append(", '%Y-%m-%d %H:%i:%s') as ").append(name);
+            } else if ("date".equals(type)) {
+                sqlBuilder.append("DATE_FORMAT(a.").append(name).append(", '%Y-%m-%d') as ").append(name);
+            } else {
+                sqlBuilder.append("a.").append(name);
+            }
+            sqlBuilder.append(",");
+        }
+        sqlBuilder.deleteCharAt(sqlBuilder.length() - 1);
+        sqlBuilder.append(" \nfrom ").append(tableName).append(" a");
+        boolean hasIdField = false;
+        for (Map<String, Object> field : fields) {
+            if ("id".equals(String.valueOf(field.get("name")).toLowerCase())) {
+                hasIdField = true;
+                break;
+            }
+        }
+        if (hasIdField) {
+            sqlBuilder.append("\norder by a.id desc");
+        }
+        return sqlBuilder.toString();
+    }
+
+    /**
+     * P2-7：字典翻译字段收集（包级静态供单测）——name 小写 endsWith state/status 的字段（与
+     * BaseQueryTypeLayout.ftl dsp 显示列触发条件同口径，dsp 列有输出而 Service 不翻译则永远空白）。
+     * 每项输出 {name: 原字段名小写, pcode: PascalCase(字段名) 占位}，pcode 由模板生成 TODO 提示人工确认。
+     */
+    static List<Map<String, String>> collectDictTransformFields(List<Map<String, Object>> fields) {
+        List<Map<String, String>> dictTransformFields = new ArrayList<>();
+        for (Map<String, Object> field : fields) {
+            String name = String.valueOf(field.get("name"));
+            String lowerName = name.toLowerCase();
+            if (lowerName.endsWith("state") || lowerName.endsWith("status")) {
+                Map<String, String> dictField = new LinkedHashMap<>();
+                dictField.put("name", lowerName);
+                dictField.put("pcode", StringUtil.capitalize(name));
+                dictTransformFields.add(dictField);
+            }
+        }
+        return dictTransformFields;
     }
 
     // P0-2：由 private 提为包级静态，供 TableParser/CodeGenerateService 快照单测调用（无实例状态，纯函数）

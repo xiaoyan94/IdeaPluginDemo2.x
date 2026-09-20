@@ -22,7 +22,8 @@ import com.zhiyin.service.excel.mapper.Mapper;
 import com.zhiyin.service.utils.CollectorsUtils;
 </#if>
 import com.zhiyin.utils.StringHelper;
-<#if generateImport>
+<#-- P2-7：字典块（setLanguage 用 getStringFromMap）也依赖 StringUtils，无导入功能时同样需要该 import -->
+<#if generateImport || (dictTransformFields?? && dictTransformFields?has_content)>
 import com.zhiyin.utils.StringUtils;
 </#if>
 import org.slf4j.Logger;
@@ -54,7 +55,19 @@ public class ${ObjectName}Service extends BaseService {
 </#if>
 
     public Map query${ObjectName}List(Map<String, Object> params) throws Exception {
+<#if dictTransformFields?? && dictTransformFields?has_content>
+<#-- P2-7：有 state/status 字典字段时走 5 参 queryDaoDataT + DictTransformBuilder（framework BaseService 5 参重载），
+     pcode 默认 PascalCase 字段名，按实际字典确认；language 由框架 getParameterMap 注入，字典缺条目 dsp 列空白无害 -->
+        // TODO: 字典 pcode 按实际字典确认（默认 PascalCase 字段名），字典缺条目时 dsp 列空白无害
+        DictTransformBuilder dictTransformBuilder = new DictTransformBuilder()
+                .setLanguage(StringUtils.getStringFromMap(params, "language"))
+<#list dictTransformFields as dictField>
+                .addDictTransform("${dictField.pcode}", "${dictField.name}", "${dictField.name}dsp")<#if !dictField?has_next>;</#if>
+</#list>
+        return queryDaoDataT(I${ObjectName}Dao.class, ${objectName}Dao, "query${ObjectName}List", params, dictTransformBuilder);
+<#else>
         return queryDaoDataT(I${ObjectName}Dao.class, ${objectName}Dao, "query${ObjectName}List", params);
+</#if>
     }
 <#if generateImport>
 

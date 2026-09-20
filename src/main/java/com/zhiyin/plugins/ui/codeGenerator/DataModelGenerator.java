@@ -380,17 +380,8 @@ public class DataModelGenerator {
                     fields.clear();
                     fields.addAll(tableMetadata);
 
-                    StringBuilder sqlBuilder = new StringBuilder("select ");
-                    for (int i = 0; i < fields.size(); i++) {
-                        sqlBuilder.append("a.")
-                                  .append(fields.get(i).get("name"))
-                                  .append(",");
-                    }
-                    sqlBuilder.deleteCharAt(sqlBuilder.length() - 1);
-                    sqlBuilder.append(" \nfrom ")
-                              .append(tableName)
-                              .append(" a");
-                    sql = sqlBuilder.toString();
+                    // P2-7：select 拼装收敛到 CodeGenerateService.buildAutoSelectSql（datetime/date 列 DATE_FORMAT、id 列追加排序）
+                    sql = CodeGenerateService.buildAutoSelectSql(tableName, fields);
 
                     updateTableModel();
                 }
@@ -416,6 +407,21 @@ public class DataModelGenerator {
      *
      * @return null 表示合法；否则返回可直接展示给用户的错误原因
      */
+    /**
+     * P2-7：查询字段默认启发式（纯函数供单测）——除 code/name 等传统命中外，补两条：
+     * status/state 结尾字段（状态过滤）与 type=datetime 的列（Layout 渲染 from/to 范围输入）。
+     * 背景：失败日志类表（sync_erp_iqc_fail_log 等）无 code/name 结尾列，旧启发式零命中 → 查询面板全空。
+     */
+    static boolean defaultQueryField(String name, String type) {
+        if (name.endsWith("code") || name.endsWith("name")) {
+            return true;
+        }
+        if (name.endsWith("status") || name.endsWith("state")) {
+            return true;
+        }
+        return "datetime".equals(type);
+    }
+
     static String validateDbTableName(String tableName) {
         if (tableName == null || tableName.trim().isEmpty()) {
             return "表名不能为空";
@@ -467,17 +473,8 @@ public class DataModelGenerator {
                 fields.clear();
                 fields.addAll(fieldsFromSQL);
 
-                StringBuilder sqlBuilder = new StringBuilder("select ");
-                for (int i = 0; i < fields.size(); i++) {
-                    sqlBuilder.append("a.")
-                              .append(fields.get(i).get("name"))
-                              .append(",");
-                }
-                sqlBuilder.deleteCharAt(sqlBuilder.length() - 1);
-                sqlBuilder.append(" \nfrom ")
-                          .append(tableName)
-                          .append(" a");
-                this.sql = sqlBuilder.toString();
+                // P2-7：select 拼装收敛到 CodeGenerateService.buildAutoSelectSql（datetime/date 列 DATE_FORMAT、id 列追加排序）
+                this.sql = CodeGenerateService.buildAutoSelectSql(tableName, fields);
 
                 updateTableModel();
             } else {
@@ -588,9 +585,7 @@ public class DataModelGenerator {
                     if (addQueryFields.contains(name)) {
                         return true;
                     }
-                    if (name.endsWith("code") || name.endsWith("name")) {
-                        return true;
-                    }
+                    return defaultQueryField(name, String.valueOf(field.get("type")));
                 }
                 return false;
             });

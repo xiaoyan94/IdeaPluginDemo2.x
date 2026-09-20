@@ -12,8 +12,10 @@ public class TableParser {
     // Method to extract table name from CREATE TABLE statement
     public static String extractTableName(String createTableSQL) {
         // Regular expression to match table name after CREATE TABLE keyword
+        // P2-7 附带修复：兼容 `CREATE TABLE IF NOT EXISTS` 形态（登骐 docs SQL 原生写法；
+        // 旧正则对此形态返回 null，生成被「模型数据为空」拦截）
         @SuppressWarnings("RegExpRedundantClassElement")
-        String regex = "\\bCREATE\\s+TABLE\\s+`?([\\w\\d_]+)`?\\s*\\(";
+        String regex = "\\bCREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?`?([\\w\\d_]+)`?\\s*\\(";
         Pattern pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(createTableSQL);
 

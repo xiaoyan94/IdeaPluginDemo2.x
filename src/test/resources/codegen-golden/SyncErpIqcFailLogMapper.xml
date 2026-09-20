@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"     "classpath://mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhiyin.dao.basic.ISyncErpIqcFailLogDao">
+
+    <select id="querySyncErpIqcFailLogList" parameterType="Map" resultType="Map">
+		SELECT a.id,
+		a.api,
+		a.url,
+		a.param,
+		a.result,
+		a.error,
+		DATE_FORMAT(a.createtime, '%Y-%m-%d %H:%i:%s') as createtime,
+		DATE_FORMAT(a.maintaintime, '%Y-%m-%d %H:%i:%s') as maintaintime,
+		a.status,
+		a.delflag,
+		a.retrycount,
+		DATE_FORMAT(a.lastretrytime, '%Y-%m-%d %H:%i:%s') as lastretrytime,
+		DATE_FORMAT(a.successtime, '%Y-%m-%d %H:%i:%s') as successtime,
+		a.finalfailflag
+		FROM sync_erp_iqc_fail_log a
+		ORDER BY a.id desc
+        <where>
+            <if test="api != null and api != ''">
+                and a.api like concat('%',#{api}, '%')
+            </if>
+            <if test="maintaintimefrom != null and maintaintimefrom != ''">
+                and a.maintaintime >= concat(#{maintaintimefrom}, ' 00:00:00')
+            </if>
+            <if test="maintaintimeto != null and maintaintimeto != ''">
+                and a.maintaintime <![CDATA[ <= ]]> concat(#{maintaintimeto}, ' 23:59:59')
+            </if>
+            <if test="status != null and status != ''">
+                and a.status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <update id="deleteSyncErpIqcFailLog" parameterType="Map">
+        delete a
+        from sync_erp_iqc_fail_log a
+        where a.factoryid = #{factoryid}
+        <choose>
+            <when test="id != null and id != ''">
+                and a.id = #{id}
+            </when>
+            <when test="idlist != null and idlist.size() > 0">
+                and a.id in
+                <foreach collection="idlist" item="item" open="(" close=")" separator=",">
+                    #{item}
+                </foreach>
+            </when>
+            <otherwise>
+                and 1 = 0  <!-- 避免删除全表的保护条件 -->
+            </otherwise>
+        </choose>
+    </update>
+</mapper>
