@@ -98,6 +98,9 @@ public class DataModelGenerator {
 
     private String tableName;
     private String sql;
+    // P2-7 修复：sql 来自 buildAutoSelectSql 自动拼装（DB/DDL 路径）时置位——paramsMap.orderByIdDesc，
+    // Mapper 模板在 </where> 之后输出 order by a.id desc；DQL 用户自输 SQL 路径保持 false 零变化
+    private boolean orderByIdDesc;
     private JCheckBox mocCheckBox;
     private JCheckBox layoutCheckBox;
     private JCheckBox htmlCheckBox;
@@ -380,8 +383,10 @@ public class DataModelGenerator {
                     fields.clear();
                     fields.addAll(tableMetadata);
 
-                    // P2-7：select 拼装收敛到 CodeGenerateService.buildAutoSelectSql（datetime/date 列 DATE_FORMAT、id 列追加排序）
+                    // P2-7：select 拼装收敛到 CodeGenerateService.buildAutoSelectSql（datetime/date 列 DATE_FORMAT）；
+                    // P2-7 修复：order by 不再拼进 select（移到 Mapper 模板 </where> 之后），此处置位 orderByIdDesc 标志
                     sql = CodeGenerateService.buildAutoSelectSql(tableName, fields);
+                    orderByIdDesc = true;
 
                     updateTableModel();
                 }
@@ -420,6 +425,33 @@ public class DataModelGenerator {
             return true;
         }
         return "datetime".equals(type);
+    }
+
+    /**
+     * P2-7 修复：是否需要预定位时间范围派生 key 的追加上下文（纯函数供单测）——存在「查询勾选 +
+     * easyuiClass 含 date/time + comment 非空」字段时为真（过近似：comment 命中与缺失待确认两来源
+     * 都可能产出有效列 key，确认弹窗选「直接生成」时清单为空、context 空转一次不写盘）。
+     * isQueryField 兼容 String（TableParser）与 Boolean（UI 归一/编辑回写）两形态。
+     */
+    static boolean mayNeedTimeRangeDerivedI18n(List<Map<String, Object>> fields) {
+        for (Map<String, Object> field : fields) {
+            if (!"true".equals(String.valueOf(field.get("isQueryField")))) {
+                continue;
+            }
+            Object easyuiClass = field.get("easyuiClass");
+            if (easyuiClass == null) {
+                continue;
+            }
+            String cls = easyuiClass.toString().toLowerCase();
+            if (!cls.contains("date") && !cls.contains("time")) {
+                continue;
+            }
+            Object comment = field.get("comment");
+            if (comment != null && !comment.toString().trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static String validateDbTableName(String tableName) {
@@ -473,8 +505,10 @@ public class DataModelGenerator {
                 fields.clear();
                 fields.addAll(fieldsFromSQL);
 
-                // P2-7：select 拼装收敛到 CodeGenerateService.buildAutoSelectSql（datetime/date 列 DATE_FORMAT、id 列追加排序）
+                // P2-7：select 拼装收敛到 CodeGenerateService.buildAutoSelectSql（datetime/date 列 DATE_FORMAT）；
+                // P2-7 修复：order by 不再拼进 select（移到 Mapper 模板 </where> 之后），此处置位 orderByIdDesc 标志
                 this.sql = CodeGenerateService.buildAutoSelectSql(tableName, fields);
+                orderByIdDesc = true;
 
                 updateTableModel();
             } else {
@@ -506,6 +540,8 @@ public class DataModelGenerator {
             if (input != null && !input.isEmpty()) {
                 this.tableName = TableParser.extractTableNameFromDQL(input);
                 this.sql = input;
+                // P2-7 修复：DQL 用户自输 SQL 不置 orderByIdDesc（排序语义由用户 SQL 自带，Mapper 模板不追加）
+                orderByIdDesc = false;
                 List<Map<String, Object>> fieldsFromSQL = TableParser.parseDQL(input);
                 fields.clear();
                 fields.addAll(fieldsFromSQL);
@@ -904,6 +940,37 @@ public class DataModelGenerator {
         } else {
             menuNameZh = null;
         }
+        // P2-7 修复：父菜单名称输入（菜单 SQL 草稿的 pid/seq 按父菜单名自动反查，不再留 TODO 占位）；取消则整个生成中止
+        final String parentMenuZh;
+        if (menuSqlCheckBox.isSelected()) {
+            String parentMenuInput = Messages.showInputDialog(
+                    project,
+                    "父菜单名称（挂在哪个父菜单下，如 数据同步）：",
+                    "菜单 SQL 草稿",
+                    Messages.getQuestionIcon(),
+                    "",
+                    new InputValidatorEx() {
+                        @Override
+                        public @NlsContexts.DetailedDescription @Nullable String getErrorText(@NonNls String inputString) {
+                            if (inputString.contains(" ")) {
+                                return "父菜单名称不能包含空格";
+                            }
+                            if (inputString.length() > 64) {
+                                return "父菜单名称不能超过64个字符";
+                            }
+                            return isEmptyOrSpaces(inputString) ? "父菜单名称不能为空" : null;
+                        }
+                    }
+            );
+            if (parentMenuInput == null) {
+                // 取消输入 → 整个生成中止（照菜单中文名取消的中止模式）
+                MyPluginMessages.showWarning("无法继续生成", "已取消父菜单名称输入，本次生成中止", project);
+                return;
+            }
+            parentMenuZh = parentMenuInput;
+        } else {
+            parentMenuZh = null;
+        }
 //        service.generateModelByFields(this.module, folder, modelName, this.tableName, this.fields);
         /*if(mocCheckBox.isSelected()){
             service.generateMocFile(this.module, folder, modelName, this.tableName, this.fields);
@@ -927,9 +994,12 @@ public class DataModelGenerator {
         // P1-6：导出框架（auto / easyexcel / easyexcel2），下拉默认「自动」由服务端探测解析
         int exportFrameworkIndex = exportFrameworkComboBox.getSelectedIndex();
         paramsMap.put("exportFramework", exportFrameworkIndex == 1 ? "easyexcel" : exportFrameworkIndex == 2 ? "easyexcel2" : "auto");
-        // P2-3：菜单注册 SQL 草稿勾选标志 + 菜单中文名（zh_TW/en_US 翻译结果由后台任务完成后回填进 paramsMap）
+        // P2-3：菜单注册 SQL 草稿勾选标志 + 菜单中文名（zh_TW/en_US 翻译结果由后台任务完成后回填进 paramsMap）；
+        // P2-7 修复：parentMenuZh 供 pid/seq 自动反查、orderByIdDesc 供 Mapper 模板 </where> 后输出排序
         paramsMap.put("menuSqlCheckBox", menuSqlCheckBox.isSelected());
         paramsMap.put("menuNameZh", menuNameZh);
+        paramsMap.put("parentMenuZh", parentMenuZh);
+        paramsMap.put("orderByIdDesc", orderByIdDesc);
         paramsMap.put("dataMaintenanceRadioButton", dataMaintenanceRadioButton.isSelected());
         paramsMap.put("dataQueryRadioButton", dataQueryRadioButton.isSelected());
 
@@ -939,6 +1009,9 @@ public class DataModelGenerator {
             private Map<String, List<Property>> i18nByComment = Collections.emptyMap();
             // P2-6：导入骨架字段的非 datagrid i18n 预查结果（后台线程索引反查，EDT 只消费；未勾导入保持空集）
             private Map<String, List<Property>> importI18nByComment = Collections.emptyMap();
+            // P2-7 修复：时间范围 from/to 派生 key 的追加上下文（后台线程定位三语言文件 + 读现有 key 集合；
+            // 未命中派生条件保持 null，generateBaseQueryTypeFile 追加时静默跳过）
+            private I18nGenerateService.I18nDatagridAppendContext timeRangeAppendContext;
             // P2-3：菜单名翻译结果（后台线程网络 IO；失败保持空串，模板渲染 TODO 形态兜底，不中断生成）
             private String menuNameTw = "";
             private String menuNameEn = "";
@@ -983,6 +1056,13 @@ public class DataModelGenerator {
                     }
                 }
                 i18nByComment = MyPropertiesUtil.findModuleDataGridI18nPropertiesByValueBatch(project, module, comments);
+                // P2-7 修复：时间范围 from/to 派生 key 需追加写模块三语言 properties——后台预定位三语言
+                // 文件与现有 key 集合（prepareAppendContext 自带双分支线程纪律，EDT 只消费）；
+                // 仅当存在「查询勾选 + easyuiClass 含 date/time + comment 非空」字段时准备（过近似，
+                // 覆盖命中与确认追加两来源；全未命中直接生成时派生清单为空、context 不被消费）
+                if (mayNeedTimeRangeDerivedI18n(fields)) {
+                    timeRangeAppendContext = project.getService(I18nGenerateService.class).prepareAppendContext(module);
+                }
             }
 
             @Override
@@ -993,6 +1073,8 @@ public class DataModelGenerator {
                 paramsMap.put("menuNameEn", menuNameEn);
                 // P2-6：导入骨架 i18n 预查结果回填 paramsMap，供 generateBaseQueryTypeFile 的 Imp mapper 骨架分支消费
                 paramsMap.put("importI18nByComment", importI18nByComment);
+                // P2-7 修复：时间范围派生 key 追加上下文回填 paramsMap，供 generateBaseQueryTypeFile 产物生成后追加写
+                paramsMap.put("timeRangeAppendContext", timeRangeAppendContext);
                 if (dataQueryRadioButton.isSelected()) {
                     // P2-2：纯逻辑计算缺失清单（复用预查结果，无索引/PSI 查询）；无缺失时零行为变化（直接生成，不弹窗）
                     CodeGenerateService.I18nMissingSummary missingSummary = CodeGenerateService.collectI18nMissingSummary(

@@ -384,6 +384,13 @@ public final class CodeGenerateService {
             }
         });
         dataGrid1.put("queryFields", queryFields);
+        // P2-7 修复：order by a.id desc 从 buildAutoSelectSql 尾部移到 Mapper 模板 </where> 之后（真实规范
+        // DataSyncMapper 排序在条件之后）——paramsMap.orderByIdDesc 由 DataModelGenerator 在 DB/DDL 自动拼装
+        // 路径置位（DQL 自输 SQL 缺省 false 零变化），且表有 id 列才置真（无 id 表不输出排序，同旧语义）
+        dataGrid1.put("orderByIdDesc", Boolean.TRUE.equals(paramsMap.get("orderByIdDesc")) && hasIdField(fields));
+        // P2-7 修复：Layout 查询时间范围 from/to 派生 key 收集（列富化后 field.i18nKey 已就绪，纯 EDT 逻辑）——
+        // from = <有效列key>_from、to = 固定共享 key，产物生成后在 finally 走幂等只追加管道写模块三语言 properties
+        List<I18nGenerateService.I18nConfirmedAppend> timeRangeDerivedAppends = collectTimeRangeDerivedAppends(fields);
         // P2-7：字典翻译字段（name 小写 endsWith state/status，与 Layout dsp 列同口径）放根变量，
         // BaseQueryTypeService.ftl 按有无分叉 5 参 queryDaoDataT 字典块；无此类字段时模板 else 分支与旧版零漂移
         dmLayout.put("dictTransformFields", collectDictTransformFields(fields));
@@ -438,8 +445,19 @@ public final class CodeGenerateService {
             dmLayout.put("menuNameZh", menuNameZh == null ? "" : menuNameZh.toString());
             dmLayout.put("menuNameTw", menuNameTw == null ? "" : menuNameTw.toString());
             dmLayout.put("menuNameEn", menuNameEn == null ? "" : menuNameEn.toString());
+            // P2-7b 沙箱回归修复：parentMenuZh 必须映射进 dmLayout——menu.sql.ftl 的 ${parentMenuZh?replace(...)}
+            // 是直接解引用无兜底，漏映射时模板渲染抛 TemplateException，menu 草稿写成 0 字节且中断 moc 等后续产物
+            // （golden 测试直供数据模型拦不住此类 paramsMap→dmLayout 断链，只有走真实生成链路才能暴露）
+            Object parentMenuZh = paramsMap.get("parentMenuZh");
+            dmLayout.put("parentMenuZh", parentMenuZh == null ? "" : parentMenuZh.toString());
             dmLayout.put("menuFolder", folder);
             dmLayout.put("menuSnakeKey", toSnakeCase(modelName));
+            // P2-7 修复：菜单 i18n key（Controller 导出文件名 + Html title 用，与 menu.sql 的
+            // sys_res_i18n KEY 同源）——menuNameZh 非空时置，缺省不置（模板 ${menuI18nKey!fileName} 回退，老场景零漂移）；
+            // 取 dmLayout 已归一的 menuNameZh（null → ""），防 String.valueOf(null)="null" 误判非空
+            if (!isEmptyOrSpaces(dmLayout.get("menuNameZh").toString())) {
+                dmLayout.put("menuI18nKey", "com.zhiyin.mes.menu." + dmLayout.get("menuSnakeKey"));
+            }
             dmLayout.put("menuButtons", buildMenuButtons(resolveGenerateImport(paramsMap)));
         }
 
@@ -529,13 +547,23 @@ public final class CodeGenerateService {
         } finally {
             // P2-2：确认追加路径——产物生成后写模块三语言 datagrid properties（幂等只追加），
             // 追加统计拼接进汇总通知；直接生成路径 summary 为 null，通知形态与之前完全一致
-            String i18nAppendSummary = null;
+            // P2-7 修复：时间范围 from/to 派生 key 追加（确定性派生不进确认弹窗）——context 由
+            // DataModelGenerator 后台预定位经 paramsMap 传入，与确认追加两路各自判重幂等，计数合并入通知
+            I18nGenerateService.I18nAppendResult appendResult = null;
             if (confirmedI18nByField != null && !confirmedI18nByField.isEmpty()) {
-                I18nGenerateService.I18nAppendResult appendResult = project.getService(I18nGenerateService.class)
+                appendResult = project.getService(I18nGenerateService.class)
                         .appendConfirmedEntries(module, i18nAppendContext, confirmedI18nByField.values());
-                i18nAppendSummary = appendResult.toSummarySuffix();
             }
-            notifyGenerateSummary(results, i18nAppendSummary);
+            if (!timeRangeDerivedAppends.isEmpty()) {
+                I18nGenerateService.I18nAppendResult derivedResult = project.getService(I18nGenerateService.class)
+                        .appendDerivedEntries(module, castTimeRangeAppendContext(paramsMap), timeRangeDerivedAppends);
+                appendResult = appendResult == null ? derivedResult : new I18nGenerateService.I18nAppendResult(
+                        appendResult.zhCnAdded() + derivedResult.zhCnAdded(),
+                        appendResult.zhTwAdded() + derivedResult.zhTwAdded(),
+                        appendResult.enUsAdded() + derivedResult.enUsAdded(),
+                        appendResult.skippedExisting() + derivedResult.skippedExisting());
+            }
+            notifyGenerateSummary(results, appendResult == null ? null : appendResult.toSummarySuffix());
         }
     }
 
@@ -764,6 +792,13 @@ public final class CodeGenerateService {
         return precomputed instanceof Map ? (Map<String, List<Property>>) precomputed : Collections.emptyMap();
     }
 
+    // P2-7 修复：paramsMap 里后台预定位的时间范围派生 key 追加上下文类型安全读取（无键/类型不符按 null，追加静默跳过）
+    private static I18nGenerateService.I18nDatagridAppendContext castTimeRangeAppendContext(Map<String, Object> paramsMap) {
+        Object context = paramsMap.get("timeRangeAppendContext");
+        return context instanceof I18nGenerateService.I18nDatagridAppendContext
+                ? (I18nGenerateService.I18nDatagridAppendContext) context : null;
+    }
+
     // P2-6：Imp mapper 骨架排除列（框架/审计列不进 Excel 导入列定义），均按小写比较（包级静态，供单测锁定）
     static final Set<String> IMPORT_EXCLUDED_COLUMNS = Set.of(
             "id", "factoryid", "useflag", "maintainer", "maintaintime",
@@ -915,8 +950,10 @@ public final class CodeGenerateService {
     /**
      * P2-7：生成器自动拼装查询页 select（DB/DDL 两路径共用，DQL 用户自输 SQL 不走此方法）。
      * <p>MES 规范对齐（DataSyncMapper 口径）：datetime/timestamp 列包 DATE_FORMAT 到秒（别名=原列名保持 Map key）、
-     * date 列 DATE_FORMAT 到日（必须精确 equals，contains 会把 datetime 误匹配进日期分支）；
-     * 存在 name 小写等于 id 的字段时尾部追加 order by a.id desc（失败日志类页面无序不可用），无 id 不加。</p>
+     * date 列 DATE_FORMAT 到日（必须精确 equals，contains 会把 datetime 误匹配进日期分支）。
+     * P2-7 修复：不再尾部追加 order by a.id desc——排序移到 BaseQueryTypeMapper.ftl 的 {@code </where>}
+     * 之后（真实规范 DataSyncMapper 排序在全部条件之后），由 orderByIdDesc 标志（paramsMap，DB/DDL 自动
+     * 拼装路径置位）+ {@link #hasIdField} 组合控制在模板输出，本方法产物不含排序。</p>
      */
     public static String buildAutoSelectSql(String tableName, List<Map<String, Object>> fields) {
         StringBuilder sqlBuilder = new StringBuilder("select ");
@@ -937,17 +974,21 @@ public final class CodeGenerateService {
         }
         sqlBuilder.deleteCharAt(sqlBuilder.length() - 1);
         sqlBuilder.append(" \nfrom ").append(tableName).append(" a");
-        boolean hasIdField = false;
+        return sqlBuilder.toString();
+    }
+
+    /**
+     * P2-7 修复：id 列探测（从 buildAutoSelectSql 的排序追加逻辑中提取，包级静态供单测）——
+     * 供 generateBaseQueryTypeFile 组合 orderByIdDesc 标志：表无 id 列时模板不输出排序（与旧
+     * buildAutoSelectSql「无 id 不加 order by」语义一致，防止无 id 表生成引用不存在列的排序）。
+     */
+    static boolean hasIdField(List<Map<String, Object>> fields) {
         for (Map<String, Object> field : fields) {
             if ("id".equals(String.valueOf(field.get("name")).toLowerCase())) {
-                hasIdField = true;
-                break;
+                return true;
             }
         }
-        if (hasIdField) {
-            sqlBuilder.append("\norder by a.id desc");
-        }
-        return sqlBuilder.toString();
+        return false;
     }
 
     /**
@@ -968,6 +1009,48 @@ public final class CodeGenerateService {
             }
         }
         return dictTransformFields;
+    }
+
+    /**
+     * P2-7 修复：Layout 查询时间范围 from/to 派生 key 收集（纯函数，供单测）——遍历「查询勾选 +
+     * easyuiClass 含 date/time」字段，有有效列 i18n key（confirmed 追加 key 或 comment 命中 key，
+     * 即列富化后的 field.i18nKey）时派生 {@code <key>_from} 条目（值 = 列 chs/cht/eng +「从」/
+     * 「從」/「 From」，unicode 转义形态先解码）；任一 from 条目存在时补 to 固定共享 key 条目。
+     * 无 key 字段不派生（模板 label 走 {@code ${field.name?lowerCase}从} 兜底零漂移）；
+     * isQueryField 兼容 String（服务内已归一）与 Boolean（测试直调）两形态。
+     */
+    static List<I18nGenerateService.I18nConfirmedAppend> collectTimeRangeDerivedAppends(List<Map<String, Object>> fields) {
+        List<I18nGenerateService.I18nConfirmedAppend> appends = new ArrayList<>();
+        for (Map<String, Object> field : fields) {
+            if (!"true".equals(String.valueOf(field.get("isQueryField")))) {
+                continue;
+            }
+            Object easyuiClass = field.get("easyuiClass");
+            if (easyuiClass == null) {
+                continue;
+            }
+            String cls = easyuiClass.toString().toLowerCase();
+            if (!cls.contains("date") && !cls.contains("time")) {
+                continue;
+            }
+            Object columnKey = field.get("i18nKey");
+            if (columnKey == null || isEmptyOrSpaces(columnKey.toString())) {
+                continue;
+            }
+            appends.add(I18nGenerateService.deriveTimeRangeFromEntry(
+                    String.valueOf(field.get("name")), columnKey.toString(),
+                    decodePropertyValue(field.get("chs")), decodePropertyValue(field.get("cht")),
+                    decodePropertyValue(field.get("eng"))));
+        }
+        if (!appends.isEmpty()) {
+            appends.add(I18nGenerateService.deriveTimeRangeToEntry());
+        }
+        return appends;
+    }
+
+    /** properties 命中值可能为 unicode 转义形态（PSI getValue 原样），派生拼接前先解码；null 透传（走 TODO 行） */
+    private static String decodePropertyValue(Object value) {
+        return value == null ? null : StringUtil.unicodeToString(value.toString());
     }
 
     // P0-2：由 private 提为包级静态，供 TableParser/CodeGenerateService 快照单测调用（无实例状态，纯函数）

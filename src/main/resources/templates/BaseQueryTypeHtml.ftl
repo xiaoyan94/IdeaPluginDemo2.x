@@ -2,7 +2,10 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-    <title>${fileName}</title>
+<#-- P2-7 修复：title 走 <@message> 宏（DengqiMes 主流形态，menu.* key 有先例）——产物 HTML 本身是
+     freemarker 模板，<@message 与 /> 以 <#noparse> 包裹输出（同下方 import 弹窗区用法）；
+     menuI18nKey 缺省回退 fileName（菜单 SQL 未勾/未填菜单名的老场景） -->
+    <title><#noparse><@message key="</#noparse>${menuI18nKey!fileName}<#noparse>"/></#noparse></title>
     <meta http-equiv="pragma" content="no-cache">
     <meta http-equiv="cache-control" content="no-cache">
     <meta http-equiv="expires" content="0">

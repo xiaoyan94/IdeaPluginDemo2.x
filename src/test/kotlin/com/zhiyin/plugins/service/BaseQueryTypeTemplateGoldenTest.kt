@@ -182,7 +182,9 @@ class BaseQueryTypeTemplateGoldenTest {
      * 用例 I（P2-7）：sync_erp_iqc_fail_log 真实 DDL 场景（iqc_incoming_check_upgrade.sql:180-198 关键列，
      * TableParser.getType 归一形态）——sql 与 dictTransformFields 均由 CodeGenerateService 计算传入
      * （不手写 key），Mapper/Service 渲染与新 golden 快照逐字节一致。
-     * 锁定有意变化：select 4 个 DATE_FORMAT + ORDER BY、Mapper `<if>` 仅查询面板勾选字段、
+     * 锁定有意变化：select 4 个 DATE_FORMAT、Mapper `<if>` 仅查询面板勾选字段、
+     * P2-7 修复：order by a.id desc 移到 </where> 之后（小写、8 空格缩进，真实规范 DataSyncMapper
+     * 排序在全部条件之后；sql 段不再含 ORDER BY）、
      * Service status 字典块（5 参 queryDaoDataT + getStringFromMap）、generateImport=false 时
      * StringUtils import 因字典块存在仍输出（条件扩展）
      */
@@ -201,8 +203,10 @@ class BaseQueryTypeTemplateGoldenTest {
         assertEquals(4, Regex("DATE_FORMAT\\(a\\.\\w+, '%Y-%m-%d %H:%i:%s'\\) as ").findAll(m).count())
         assertTrue(m.contains("DATE_FORMAT(a.createtime, '%Y-%m-%d %H:%i:%s') as createtime"))
         assertTrue(m.contains("a.api"))
-        // 存在 id 字段 → 追加排序
-        assertTrue(m.contains("ORDER BY a.id desc"))
+        // P2-7 修复：order by 在 </where> 之后（sql 段不再含），小写形态
+        assertTrue(m.contains("order by a.id desc"))
+        assertFalse(m.contains("ORDER BY a.id desc"))
+        assertTrue(m.indexOf("</where>") < m.indexOf("order by a.id desc"))
         // <if> 仅查询面板勾选字段（api/maintaintime/status），未勾选列不出死条件
         assertTrue(m.contains("""<if test="api != null and api != ''">"""))
         assertTrue(m.contains("""<if test="maintaintimefrom != null and maintaintimefrom != ''">"""))
@@ -250,6 +254,96 @@ class BaseQueryTypeTemplateGoldenTest {
         assertTrue(mapper.contains("<where>"))
     }
 
+    /**
+     * 用例 K（P2-7 修复）：orderByIdDesc 标志——缺省/显式 false 时 Mapper 无 order by（老调用方零漂移）；
+     * true 时在 </where> 之后、</select> 之前输出小写 order by a.id desc
+     */
+    @Test
+    fun caseK_orderByIdDescFlag_controlsOrderByAfterWhere() {
+        fun mapperWith(orderByIdDesc: Any?): String {
+            val model = minimalDataModel(generateImport = true, generateExport = true).toMutableMap().apply {
+                @Suppress("UNCHECKED_CAST")
+                (this["dataGrids"] as List<MutableMap<String, Any>>)[0].let { grid ->
+                    if (orderByIdDesc != null) grid["orderByIdDesc"] = orderByIdDesc else grid.remove("orderByIdDesc")
+                }
+            }
+            return renderWith(model, "BaseQueryTypeMapper.ftl").replace("\r\n", "\n")
+        }
+        // 缺省（键不存在，旧调用方/手写 SQL 场景）→ 无排序
+        val absent = mapperWith(null)
+        assertFalse(absent.contains("order by"))
+        // 显式 false → 同缺省
+        assertFalse(mapperWith(false).contains("order by"))
+        // true → </where> 之后输出，小写、8 空格缩进
+        val enabled = mapperWith(true)
+        assertTrue(enabled.contains("        </where>\n        order by a.id desc\n    </select>"))
+        assertTrue(enabled.indexOf("</where>") < enabled.indexOf("order by a.id desc"))
+    }
+
+    /**
+     * 用例 L（P2-7 修复）：menuI18nKey——Controller 导出两分支文件名与 Html title 走菜单 i18n key
+     * （com.zhiyin.mes.menu.<menuSnakeKey>，与 menu.sql 的 sys_res_i18n KEY 同源）；缺省回退 fileName
+     * （caseA golden 已锁定字节级回退形态）；Controller javadoc 的 fileName 保持不动
+     */
+    @Test
+    fun caseL_menuI18nKey_exportFileNameAndHtmlTitle() {
+        val model = minimalDataModel(generateImport = true, generateExport = true).toMutableMap().apply {
+            put("menuI18nKey", "com.zhiyin.mes.menu.base_factory")
+        }
+        val controller = renderWith(model, "BaseQueryTypeController.ftl")
+        // 缺省（旧 EasyExcel 写法）分支：唯一一处 getMessage 用菜单 key
+        assertEquals(
+            1,
+            Regex("""I18nUtil\.getMessage\(userCode, "com\.zhiyin\.mes\.menu\.base_factory"\)""").findAll(controller).count(),
+        )
+        // easyexcel2 变体分支同样用菜单 key
+        val controller2 = renderWith(
+            minimalDataModel(generateImport = true, generateExport = true, exportFramework = "easyexcel2").toMutableMap().apply {
+                put("menuI18nKey", "com.zhiyin.mes.menu.base_factory")
+            },
+            "BaseQueryTypeController.ftl",
+        )
+        assertEquals(
+            1,
+            Regex("""I18nUtil\.getMessage\(userCode, "com\.zhiyin\.mes\.menu\.base_factory"\)""").findAll(controller2).count(),
+        )
+        // javadoc 的 ${fileName} Controller 不随 menuI18nKey 变化
+        assertTrue(controller.contains(" * BaseFactory Controller"))
+        assertFalse(controller.contains("I18nUtil.getMessage(userCode, \"BaseFactory\")"))
+
+        val html = renderWith(model, "BaseQueryTypeHtml.ftl")
+        assertTrue(html.contains("""<title><@message key="com.zhiyin.mes.menu.base_factory"/></title>"""))
+
+        // 缺省回退：fileName 作 key（老场景 Html title 有意变化，caseA golden 锁定完整产物）
+        val htmlFallback = render("BaseQueryTypeHtml.ftl", generateImport = true, generateExport = true)
+        assertTrue(htmlFallback.contains("""<title><@message key="BaseFactory"/></title>"""))
+        val controllerFallback = render("BaseQueryTypeController.ftl", generateImport = true, generateExport = true)
+        assertEquals(
+            1,
+            Regex("""I18nUtil\.getMessage\(userCode, "BaseFactory"\)""").findAll(controllerFallback).count(),
+        )
+    }
+
+    /**
+     * 用例 M（P2-7 修复）：Layout 查询时间范围 label——sync_erp_iqc_fail_log 场景四个 datetime 查询字段
+     * （勾选态按真实启发式口径：type=datetime 默认勾）from label = 各列 key+_from、to label = 跨页面共享
+     * key com.zhiyin.mes.app.order.ordergrid.to；无列 key 的 datetime 字段保持裸中文兜底零漂移
+     */
+    @Test
+    fun caseM_timeRangeLabelI18nKey_whenColumnKeyPresent() {
+        val layout = renderWith(iqcFailLogLayoutDataModel(), "BaseQueryTypeLayout.ftl").replace("\r\n", "\n")
+        val keyPrefix = "com.zhiyin.mes.app.basic.syncerpiqcfailloggrid"
+        listOf("createtime", "maintaintime", "lastretrytime", "successtime").forEach { name ->
+            assertTrue("from label 应为列 key+_from：$name", layout.contains("""label="$keyPrefix.${name}_from""""))
+        }
+        // to label 固定共享 key，恰好 4 处（四个时间字段各一）；from 派生 label 恰好 4 处（含 _from 后缀）
+        assertEquals(4, Regex("""label="com\.zhiyin\.mes\.app\.order\.ordergrid\.to"""").findAll(layout).count())
+        assertEquals(4, Regex("""label="[^\"]+_from\"""").findAll(layout).count())
+        // 无列 key 的 datetime 查询字段 → 裸中文兜底（零漂移）
+        assertTrue(layout.contains("""label="expiretime从""""))
+        assertTrue(layout.contains("""label="到""""))
+    }
+
     private fun renderWith(dataModel: Map<String, Any>, templateName: String): String {
         val sw = StringWriter()
         FreeMarkerConfiguration.getConfiguration().getTemplate(templateName).process(dataModel, sw)
@@ -285,6 +379,8 @@ class BaseQueryTypeTemplateGoldenTest {
             "columns" to emptyList<Any>(),
             "queryFields" to fields,
             "ckDummyColumn" to "true",
+            // P2-7 修复：order by 移到 </where> 之后由模板输出——DB/DDL 自动拼装路径 + 有 id 列的组合标志
+            "orderByIdDesc" to CodeGenerateService.hasIdField(fields),
         )
         return linkedMapOf(
             "moduleName" to "Basic",
@@ -292,6 +388,47 @@ class BaseQueryTypeTemplateGoldenTest {
             "generateImport" to false,
             "generateExport" to true,
             "dictTransformFields" to CodeGenerateService.collectDictTransformFields(fields),
+        )
+    }
+
+    /**
+     * P2-7 修复用例 M 的 Layout 渲染数据模型——四个 datetime 查询字段带列 key（勾选态按真实启发式
+     * 口径推：type=datetime 默认勾（defaultQueryField）、status 结尾默认勾、api 不勾，勿乱设值），
+     * 外加一个无列 key 的 datetime 字段锁裸中文兜底
+     */
+    private fun iqcFailLogLayoutDataModel(): Map<String, Any> {
+        val keyPrefix = "com.zhiyin.mes.app.basic.syncerpiqcfailloggrid"
+        fun timeField(name: String, withKey: Boolean): Map<String, Any> = linkedMapOf(
+            "name" to name,
+            "type" to "datetime",
+            "isQueryField" to "true",
+            "easyuiClass" to "easyui-datetimebox",
+        ).apply { if (withKey) put("i18nKey", "$keyPrefix.$name") }
+
+        val queryFields = listOf(
+            timeField("createtime", true),
+            timeField("maintaintime", true),
+            timeField("lastretrytime", true),
+            timeField("successtime", true),
+            timeField("expiretime", false), // 无列 key → 裸中文兜底（零漂移）
+            linkedMapOf("name" to "status", "type" to "int", "isQueryField" to "true"), // status 结尾默认勾，非时间控件
+            linkedMapOf("name" to "api", "type" to "string", "isQueryField" to "false"),
+        )
+        val dataGrid = linkedMapOf<String, Any>(
+            "dataGridName" to "SyncErpIqcFailLog",
+            "objectName" to "syncErpIqcFailLog",
+            "tableName" to "sync_erp_iqc_fail_log",
+            "fileName" to "SyncErpIqcFailLog",
+            "sql" to "select a.* from sync_erp_iqc_fail_log a",
+            "columns" to emptyList<Any>(),
+            "queryFields" to queryFields,
+            "ckDummyColumn" to "true",
+        )
+        return linkedMapOf(
+            "moduleName" to "Basic",
+            "dataGrids" to listOf(dataGrid),
+            "generateImport" to false,
+            "generateExport" to true,
         )
     }
 

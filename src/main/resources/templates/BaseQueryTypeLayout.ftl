@@ -75,12 +75,26 @@
                     <ComboxMultipleSel value="false"/>
                 </Combobox>
             </Field>
+            <#-- P2-7 修复：时间范围 label 走 i18n key（DengqiMes RcsOrderSyncRecord 实证）——列有有效 key
+                 （confirmed 追加 key 或 comment 命中 key，即 CodeGenerateService 富化后的 field.i18nKey）时
+                 from = <列key>_from（派生 key 由生成器追加进模块三语言 properties）、to = 跨页面共享 key
+                 com.zhiyin.mes.app.order.ordergrid.to（值 到/到/To）；列无 key 保持裸中文兜底（零漂移） -->
             <#elseIf field.isQueryField?? && field.isQueryField == "true" && field.easyuiClass?? && field.easyuiClass?contains("date")>
+            <#if field.i18nKey??>
+            <Field id="${field.name?lowerCase}from" name="${field.name?lowerCase}from" label="${field.i18nKey}_from" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
+            <Field id="${field.name?lowerCase}to" name="${field.name?lowerCase}to" label="com.zhiyin.mes.app.order.ordergrid.to" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
+            <#else>
             <Field id="${field.name?lowerCase}from" name="${field.name?lowerCase}from" label="${field.name?lowerCase}从" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
             <Field id="${field.name?lowerCase}to" name="${field.name?lowerCase}to" label="到" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
+            </#if>
             <#elseIf field.isQueryField?? && field.isQueryField == "true" && field.easyuiClass?? && field.easyuiClass?contains("time")>
+            <#if field.i18nKey??>
+            <Field id="${field.name?lowerCase}from" name="${field.name?lowerCase}from" label="${field.i18nKey}_from" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
+            <Field id="${field.name?lowerCase}to" name="${field.name?lowerCase}to" label="com.zhiyin.mes.app.order.ordergrid.to" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
+            <#else>
             <Field id="${field.name?lowerCase}from" name="${field.name?lowerCase}from" label="${field.name?lowerCase}从" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
             <Field id="${field.name?lowerCase}to" name="${field.name?lowerCase}to" label="到" easyuiClass="${field.easyuiClass!"easyui-datebox"}"/>
+            </#if>
             <#elseIf field.isQueryField?? && field.isQueryField == "true">
             <Field id="${field.name}" name="${field.name?lowerCase}"<#if field.ref??> ref="${field.ref}"</#if><#if field.label??> label="${field.label}" easyuiClass="${field.easyuiClass!"easyui-textbox"}"</#if>/>
             <#else>

@@ -208,6 +208,104 @@ class I18nGenerateServiceTest {
         assertEquals("；i18n 追加：zh_CN +0、zh_TW +0、en_US +0、跳过已存在 0", result.toSummarySuffix())
     }
 
+    // ---- P2-7 修复：时间范围 from/to 派生 key（确定性派生，不进确认弹窗） ----
+
+    @Test
+    fun timeRangeToKey_constantMatchesTemplateLiteral() {
+        // 与 BaseQueryTypeLayout.ftl to 分支 label 字面量、DengqiMes 既有共享 key 保持一致
+        assertEquals("com.zhiyin.mes.app.order.ordergrid.to", I18nGenerateService.TIME_RANGE_TO_I18N_KEY)
+    }
+
+    @Test
+    fun deriveTimeRangeFromEntry_valueConcat() {
+        val e = I18nGenerateService.deriveTimeRangeFromEntry(
+            "createtime", "com.zhiyin.mes.app.basic.syncerpiqcfailloggrid.createtime",
+            "创建时间", "創建時間", "Create Time"
+        )
+        assertEquals("createtimefrom", e.fieldName())
+        assertEquals("com.zhiyin.mes.app.basic.syncerpiqcfailloggrid.createtime_from", e.key())
+        assertEquals("创建时间从", e.zhCn())
+        assertEquals("創建時間從", e.zhTw())
+        assertEquals("Create Time From", e.enUs())
+    }
+
+    @Test
+    fun deriveTimeRangeFromEntry_missingLangLeavesEmptyForTodoLine() {
+        // 某语言基值缺失 → 留空，追加时走既有 # TODO: translate 注释行机制
+        val e = I18nGenerateService.deriveTimeRangeFromEntry("successtime", "k.successtime", "成功时间", null, " ")
+        assertEquals("成功时间从", e.zhCn())
+        assertEquals("", e.zhTw())
+        assertEquals("", e.enUs())
+    }
+
+    @Test
+    fun deriveTimeRangeToEntry_fixedSharedKey() {
+        val e = I18nGenerateService.deriveTimeRangeToEntry()
+        assertEquals(I18nGenerateService.TIME_RANGE_TO_I18N_KEY, e.key())
+        assertEquals("到", e.zhCn())
+        assertEquals("到", e.zhTw())
+        assertEquals("To", e.enUs())
+    }
+
+    @Test
+    fun concatDerivedSuffix_blankBaseStaysEmpty() {
+        assertEquals("", I18nGenerateService.concatDerivedSuffix(null, "从"))
+        assertEquals("", I18nGenerateService.concatDerivedSuffix("  ", "从"))
+        assertEquals("同步日期从", I18nGenerateService.concatDerivedSuffix("同步日期", "从"))
+        assertEquals("Sync Time From", I18nGenerateService.concatDerivedSuffix("Sync Time", " From"))
+    }
+
+    @Test
+    fun isKeySkipped_timeRangeToKeyAlreadyExists() {
+        // to-key 已存在时跳过（判重幂等，模块 properties 已含共享 key 则不重复追加）
+        assertTrue(I18nGenerateService.isKeySkipped(setOf(I18nGenerateService.TIME_RANGE_TO_I18N_KEY), I18nGenerateService.TIME_RANGE_TO_I18N_KEY))
+        assertFalse(I18nGenerateService.isKeySkipped(emptySet(), I18nGenerateService.TIME_RANGE_TO_I18N_KEY))
+    }
+
+    // ---- collectTimeRangeDerivedAppends（CodeGenerateService，同包静态）：派生清单收集 ----
+
+    @Test
+    fun collectTimeRangeDerivedAppends_fromAndToEntries() {
+        val fields = listOf(
+            // 非时间控件不派生（即便有 key）
+            linkedMapOf("name" to "code", "isQueryField" to "true", "easyuiClass" to "easyui-textbox", "i18nKey" to "k.code"),
+            // 查询未勾选不派生
+            linkedMapOf("name" to "url", "isQueryField" to "false", "easyuiClass" to "easyui-datetimebox", "i18nKey" to "k.url"),
+            // datebox 变体同样命中（contains date）
+            linkedMapOf("name" to "startdate", "isQueryField" to true, "easyuiClass" to "easyui-datebox",
+                "i18nKey" to "k.startdate", "chs" to "开始日期", "cht" to "開始日期", "eng" to "Start Date"),
+            // datetimebox + unicode 转义 chs（PSI getValue 原样形态先解码再拼接）+ cht 缺失 → TODO 行
+            linkedMapOf<String, Any>("name" to "createtime", "isQueryField" to "true", "easyuiClass" to "easyui-datetimebox",
+                "i18nKey" to "k.createtime", "chs" to "\\u521b\\u5efa\\u65f6\\u95f4", "eng" to "Create Time"),
+        )
+        val appends = CodeGenerateService.collectTimeRangeDerivedAppends(fields)
+        assertEquals(3, appends.size) // 2 个 from + 1 个 to
+        val start = appends[0]
+        assertEquals("startdatefrom", start.fieldName())
+        assertEquals("k.startdate_from", start.key())
+        assertEquals("开始日期从", start.zhCn())
+        assertEquals("開始日期從", start.zhTw())
+        assertEquals("Start Date From", start.enUs())
+        val create = appends[1]
+        assertEquals("k.createtime_from", create.key())
+        assertEquals("创建时间从", create.zhCn())
+        assertEquals("", create.zhTw())
+        assertEquals("Create Time From", create.enUs())
+        val to = appends[2]
+        assertEquals(I18nGenerateService.TIME_RANGE_TO_I18N_KEY, to.key())
+    }
+
+    @Test
+    fun collectTimeRangeDerivedAppends_noFromNoToEntry() {
+        // 无有效列 key 的 datetime 查询字段不派生（模板走裸中文兜底）；无 from 条目时也不补 to 条目
+        val fields = listOf(
+            linkedMapOf("name" to "expiretime", "isQueryField" to "true", "easyuiClass" to "easyui-datetimebox"),
+            linkedMapOf("name" to "code", "isQueryField" to "true", "easyuiClass" to "easyui-textbox", "i18nKey" to "k.code"),
+        )
+        assertTrue(CodeGenerateService.collectTimeRangeDerivedAppends(fields).isEmpty())
+        assertTrue(CodeGenerateService.collectTimeRangeDerivedAppends(emptyList()).isEmpty())
+    }
+
     /** java.util.Properties 解析单行 key=value，返回该 key 的值（转义口径的解析侧锚点） */
     private fun loadPropertyValue(line: String): String? {
         val props = Properties()

@@ -30,6 +30,12 @@ ${dataGrids[0].sql}
         </#if>
         </#list>
         </where>
+<#-- P2-7 修复：order by 移到 </where> 之后（真实规范 DataSyncMapper 排序在全部条件之后）；
+     orderByIdDesc 由 CodeGenerateService 按「DB/DDL 自动拼装路径 + 表有 id 列」组合置位，
+     缺省/旧调用方（false）零漂移；小写与缩进照现有产物风格 -->
+        <#if dataGrids[0].orderByIdDesc!false>
+        order by a.id desc
+        </#if>
     </select>
 
     <update id="delete${ObjectName}" parameterType="Map">

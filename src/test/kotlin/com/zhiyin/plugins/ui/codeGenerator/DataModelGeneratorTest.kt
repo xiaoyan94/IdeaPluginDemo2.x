@@ -1,6 +1,7 @@
 package com.zhiyin.plugins.ui.codeGenerator
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -192,5 +193,55 @@ class DataModelGeneratorTest {
         assertEquals(false, DataModelGenerator.defaultQueryField("api", "string"))
         assertEquals(false, DataModelGenerator.defaultQueryField("retrycount", "int"))
         assertEquals(false, DataModelGenerator.defaultQueryField("createtime", "string")) // 非 datetime 类型不因名字命中
+    }
+
+    // ---- mayNeedTimeRangeDerivedI18n（P2-7 修复）：时间范围派生 key 追加上下文的预定位判定 ----
+    // 「查询勾选 + easyuiClass 含 date/time + comment 非空」过近似（命中与缺失待确认两来源都可能产出列 key）
+
+    @Test
+    fun mayNeedTimeRangeDerivedI18n_queryDatetimeWithComment() {
+        // String（TableParser）与 Boolean（UI 归一/编辑回写）两形态均按勾选识别
+        assertTrue(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "createtime", "isQueryField" to "true", "easyuiClass" to "easyui-datetimebox", "comment" to "创建时间"))
+            )
+        )
+        assertTrue(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "startdate", "isQueryField" to true, "easyuiClass" to "easyui-datebox", "comment" to "开始日期"))
+            )
+        )
+        // comment 命中缺失（将走确认弹窗）也预定位——确认追加后同样要派生
+        assertTrue(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "maintaintime", "isQueryField" to "true", "easyuiClass" to "easyui-timespinner", "comment" to "维护时间"))
+            )
+        )
+    }
+
+    @Test
+    fun mayNeedTimeRangeDerivedI18n_negativeCases() {
+        // 查询未勾选 / comment 空 / 非时间控件 / 缺 easyuiClass / 空字段表 → 不预定位
+        assertFalse(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "createtime", "isQueryField" to "false", "easyuiClass" to "easyui-datetimebox", "comment" to "创建时间"))
+            )
+        )
+        assertFalse(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "createtime", "isQueryField" to "true", "easyuiClass" to "easyui-datetimebox", "comment" to ""))
+            )
+        )
+        assertFalse(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "code", "isQueryField" to "true", "easyuiClass" to "easyui-textbox", "comment" to "代码"))
+            )
+        )
+        assertFalse(
+            DataModelGenerator.mayNeedTimeRangeDerivedI18n(
+                listOf(mapOf<String, Any>("name" to "status", "isQueryField" to "true", "comment" to "状态"))
+            )
+        )
+        assertFalse(DataModelGenerator.mayNeedTimeRangeDerivedI18n(emptyList()))
     }
 }

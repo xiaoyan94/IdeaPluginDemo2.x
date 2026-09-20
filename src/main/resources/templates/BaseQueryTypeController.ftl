@@ -97,14 +97,17 @@ public class ${ObjectName}Controller extends BaseController {
             params.putAll(paramap);
             String userCode = StringUtils.getStringFromMap(params, "usercode");
 <#if exportFramework2>
+<#-- P2-7 修复：导出文件名走菜单 i18n key（与 menu.sql 的 sys_res_i18n KEY 同源）——menuI18nKey
+     由 CodeGenerateService 在 menuNameZh 非空时置入（com.zhiyin.mes.menu.<menuSnakeKey>），缺省回退
+     fileName（老场景零漂移）；类 javadoc 的 ${fileName} Controller 保持不动 -->
             Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
-            String fileName = I18nUtil.getMessage(userCode, "${fileName}");
+            String fileName = I18nUtil.getMessage(userCode, "${menuI18nKey!fileName}");
             EasyExcel2Utils.writeExportExcel(response, fileName, (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), (String[]) columnMap.get("fieldtype"), fileName, ${objectName}Service, "query${ObjectName}List", params);
 <#else>
             Map<String, Object> recordMap = ${objectName}Service.query${ObjectName}List(params);
             Map<String, Object> columnMap = excelExportService.getMultiGridExcelColumns(params);
             List<Map> rows = (List<Map>) recordMap.get("rows");
-            String fileName = I18nUtil.getMessage(userCode, "${fileName}");
+            String fileName = I18nUtil.getMessage(userCode, "${menuI18nKey!fileName}");
             EasyExcelUtils.writeExportExcel(response, DateUtils.formatDate(new Date()), (Object[]) columnMap.get("header"), (String[]) columnMap.get("field"), rows, fileName, params);
 </#if>
         } catch (Exception e) {

@@ -69,9 +69,12 @@ class MenuSqlTemplateGoldenTest {
         assertTrue(c.contains("FROM sys_menu m WHERE m.code = 'BaseFactory'"))
         // KEY 反引号（INSERT 列清单与 WHERE 判重两处）
         assertTrue(c.contains("INSERT INTO sys_res_i18n (ID, `KEY`, TYPE, maintainer, MAINTAINTIME)"))
-        // pid/seq 人工 TODO 占位醒目
-        assertTrue(c.contains("/* TODO: 父菜单 pid */"))
-        assertTrue(c.contains("/* TODO: seq */"))
+        // P2-7 修复：pid/seq 按父菜单名原子替换（SET 用户变量反查，不再留 TODO 占位），INSERT 用变量
+        assertTrue(c.contains("SET @menu_pid = (SELECT id FROM sys_menu WHERE name = '基础数据'); -- 挂在哪个父菜单下必填"))
+        assertTrue(c.contains("SET @seq = (SELECT IFNULL(MAX(id)+1, 1) FROM sys_menu WHERE pid = @menu_pid);"))
+        assertTrue(c.contains("SELECT @menu_id, @menu_pid, '工厂', 'BaseFactory', 1, NULL, './Order/BaseFactory', 'icon-blank', @seq, NULL, @i18n_id, 'zh_CN'"))
+        assertFalseContains(c, "/* TODO: 父菜单 pid */")
+        assertFalseContains(c, "/* TODO: seq */")
     }
 
     /** 用例 E：toSnakeCase 驼峰转蛇形（连续大写按「后续紧跟小写才断词」收敛，ABCTest→abc_test） */
@@ -124,6 +127,8 @@ class MenuSqlTemplateGoldenTest {
             "menuNameTw" to menuNameTw,
             "menuNameEn" to menuNameEn,
             "menuFolder" to "Order",
+            // P2-7 修复：父菜单名称（pid/seq 按此名反查；golden 测试数据补齐，如 基础数据）
+            "parentMenuZh" to "基础数据",
             "menuSnakeKey" to CodeGenerateService.toSnakeCase("BaseFactory"),
             "menuButtons" to CodeGenerateService.buildMenuButtons(generateImport),
         )

@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-09-20
+
+fix: 查询页生成 2.1.3 实测反馈五缺陷修复（codegen 改造 P2-7b）——Query 时间范围 label 走 i18n key、菜单 SQL pid/seq 按父菜单名自动反查、导出文件名与 Html title 走菜单 i18n key、Mapper order by 移到查询条件之后
+
+- **Query 时间范围 label i18n 化**：2.1.3 生成 `label="createtime从"` 裸中文；现对齐 DengqiMes RcsOrderSyncRecord 实证规范——from 字段 label = `<有效列key>_from`（值 = 列中文+从/繁体+從/英文+" From"，随生成幂等追加进模块三语言 datagrid properties，照 dsp 派生口径不进确认弹窗），to 字段 label = 跨页面共享 key `com.zhiyin.mes.app.order.ordergrid.to`（值 到/到/To，模块缺该 key 时自动补，dengqi basic 已存在则跳过）；列无 comment/key 时保持原裸中文兜底零漂移
+- **菜单 SQL pid/seq 原子替换**：勾「菜单 SQL」后在菜单中文名之后追加第二个必填输入「父菜单名称」（取消中止生成）；草稿新增 `SET @menu_pid = (SELECT id FROM sys_menu WHERE name = '<父菜单名>')` 与 `SET @seq = (SELECT IFNULL(MAX(id)+1, 1) FROM sys_menu WHERE pid = @menu_pid)`，INSERT 行以变量替换原 `/* TODO */ NULL/0` 占位，执行前只需人工复核
+- **导出文件名与 Html title 走菜单 i18n key**：Controller 导出 `I18nUtil.getMessage(userCode, "com.zhiyin.mes.menu.<menuSnakeKey>")`（与菜单草稿 sys_res_i18n KEY 同源闭环），Html `<title>` 改 `<@message key="com.zhiyin.mes.menu.<menuSnakeKey>"/>`（DengqiMes 主流形态，menu.* key 有先例；产物是 freemarker 模板，宏经 noparse 输出）；未填菜单名的老场景回退 fileName 原形态零漂移
+- **Mapper order by 位置修正**：2.1.3 的 `order by a.id desc` 拼在 select 尾部导致出现在 `<where>` 之前（语法错误）；现 buildAutoSelectSql 不再拼排序，改由模板在 `</where>` 之后按 `orderByIdDesc` 标志输出（仅 DB/DDL 自动拼装路径置位 + 表有 id 列，DQL 自输 SQL 零变化）
+- **附带修复（runIde 沙箱逮到的单测盲区）**：parentMenuZh 只进 paramsMap 未映射 dmLayout → menu.sql.ftl 直接解引用 null 抛 TemplateException，菜单草稿写成 0 字节并中断 moc 等后续产物（golden 测试直供数据模型拦不住 paramsMap→dmLayout 断链）
+- 单测 127→143（时间范围派生 key 收集/追加幂等/值拼接 8 例、buildAutoSelectSql 不再含排序、hasIdField、mayNeed 预定位口径、golden caseK/caseL/caseM、菜单 golden 补 SET 行）；runIde 沙箱真实验证 5/5（DengqiMes basic 模块 robot 驱动 DDL→生成全链路：4 个 from label + 4 个共享 to label、SET @menu_pid/@seq 两行、导出与 title 的 menu key、order by 在 </where> 后、三语言派生键追加），验证后工作副本已还原干净
+
 ## [2.1.3] - 2026-09-20
 
 feat: 查询页生成对齐 MES 传统规范（codegen 改造 P2-7，登骐 sync_erp_iqc_fail_log 真实需求驱动插队）——字典翻译、时间列格式化、默认排序、查询条件收窄四缺陷修复
@@ -442,7 +453,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.3...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.4...HEAD
+[2.1.4]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.0...v2.1.1

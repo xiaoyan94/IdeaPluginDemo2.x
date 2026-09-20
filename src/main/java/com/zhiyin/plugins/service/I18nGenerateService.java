@@ -53,6 +53,13 @@ public final class I18nGenerateService {
     /** 翻译快速失败阈值：开头连续 3 个字段翻译都抛异常则放弃剩余翻译（断网时不让用户等几十次超时） */
     static final int FAST_FAIL_TRANSLATION_THRESHOLD = 3;
 
+    /**
+     * P2-7 修复：Layout 查询时间范围 to 字段的跨页面共享 key（DengqiMes basic 模块 datagrid 三语言
+     * properties 已存在该 key，值 到/到/To；其他模块缺该 key 时生成器追加，判重幂等）。
+     * 与 BaseQueryTypeLayout.ftl to 分支 label 字面量保持一致。
+     */
+    public static final String TIME_RANGE_TO_I18N_KEY = "com.zhiyin.mes.app.order.ordergrid.to";
+
     private final Project project;
 
     public I18nGenerateService(Project project) {
@@ -200,6 +207,30 @@ public final class I18nGenerateService {
         return new I18nAppendResult(added[0], added[1], added[2], skippedExisting.get());
     }
 
+    /**
+     * P2-7 修复：Layout 查询时间范围 from/to 派生 key 追加（确定性派生不进确认弹窗，同 dsp 派生口径）。
+     * 与 {@link #appendConfirmedEntries} 共用 {@link #appendToFile} 幂等只追加管道，但不做 dsp 展开
+     * （条目 fieldName 为派生名 createtimefrom/to，不匹配 state/status/type 约定）；空翻译值同样走
+     * TODO 注释行降级。返回各文件追加行数统计（并入生成汇总通知）。
+     */
+    public I18nAppendResult appendDerivedEntries(@Nullable Module module,
+                                                 @Nullable I18nDatagridAppendContext context,
+                                                 @Nullable Collection<I18nConfirmedAppend> derivedAppends) {
+        if (context == null || derivedAppends == null || derivedAppends.isEmpty()) {
+            return new I18nAppendResult(0, 0, 0, 0);
+        }
+        List<I18nConfirmedAppend> entries = new ArrayList<>(derivedAppends);
+        AtomicInteger skippedExisting = new AtomicInteger();
+        int[] added = new int[3];
+        WriteCommandAction.runWriteCommandAction(project, () -> {
+            added[0] = appendToFile(context.zhCnFile(), context.zhCnExistingKeys(), entries, I18nLang.ZH_CN, skippedExisting);
+            added[1] = appendToFile(context.zhTwFile(), context.zhTwExistingKeys(), entries, I18nLang.ZH_TW, skippedExisting);
+            added[2] = appendToFile(context.enUsFile(), context.enUsExistingKeys(), entries, I18nLang.EN_US, skippedExisting);
+        });
+        refreshAfterAppend(module, context);
+        return new I18nAppendResult(added[0], added[1], added[2], skippedExisting.get());
+    }
+
     /** 单语言文件写入；skippedExisting 只在主语言 zh_CN 上按 key 计数一次（跨语言不重复计） */
     private int appendToFile(@Nullable VirtualFile file, Set<String> existingKeys, List<I18nConfirmedAppend> appends,
                              I18nLang lang, AtomicInteger skippedExisting) {
@@ -309,6 +340,27 @@ public final class I18nGenerateService {
     /** TODO 降级行格式：# TODO: translate: &lt;key&gt; */
     static String buildTodoTranslateLine(String key) {
         return "# TODO: translate: " + key;
+    }
+
+    /**
+     * P2-7 修复：时间范围 from 派生条目（DengqiMes RcsOrderSyncRecord 实证：from 的 label =
+     * &lt;列 key&gt;_from）——key = 列 key 追加 _from，值 = 列 zhCn+「从」/ zhTw+「從」/
+     * enUs+「 From」（某语言基值缺失留空 → 追加时走 TODO 注释行机制）。
+     */
+    static I18nConfirmedAppend deriveTimeRangeFromEntry(String fieldName, String columnKey,
+                                                        @Nullable String zhCn, @Nullable String zhTw, @Nullable String enUs) {
+        return new I18nConfirmedAppend(fieldName + "from", columnKey + "_from",
+                concatDerivedSuffix(zhCn, "从"), concatDerivedSuffix(zhTw, "從"), concatDerivedSuffix(enUs, " From"));
+    }
+
+    /** 时间范围 to 派生条目：固定跨页面共享 key，三值 到/到/To（DengqiMes basic datagrid 实证值） */
+    static I18nConfirmedAppend deriveTimeRangeToEntry() {
+        return new I18nConfirmedAppend("to", TIME_RANGE_TO_I18N_KEY, "到", "到", "To");
+    }
+
+    /** 派生值拼接：基值空白留空（走 TODO 注释行降级），否则基值+后缀（en 后缀自带前导空格） */
+    static String concatDerivedSuffix(@Nullable String base, String suffix) {
+        return base == null || base.trim().isEmpty() ? "" : base + suffix;
     }
 
     /** TODO 注释行文本判重：文件现有文本已含该行则不重复追加（幂等重跑 +0 行） */

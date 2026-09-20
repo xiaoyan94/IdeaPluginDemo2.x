@@ -19,7 +19,6 @@
 		DATE_FORMAT(a.successtime, '%Y-%m-%d %H:%i:%s') as successtime,
 		a.finalfailflag
 		FROM sync_erp_iqc_fail_log a
-		ORDER BY a.id desc
         <where>
             <if test="api != null and api != ''">
                 and a.api like concat('%',#{api}, '%')
@@ -34,6 +33,7 @@
                 and a.status = #{status}
             </if>
         </where>
+        order by a.id desc
     </select>
 
     <update id="deleteSyncErpIqcFailLog" parameterType="Map">

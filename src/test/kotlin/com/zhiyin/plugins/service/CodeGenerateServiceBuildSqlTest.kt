@@ -9,7 +9,10 @@ import org.junit.Test
  * P2-7 纯逻辑单测护栏（同包访问包级静态方法）：
  * - buildAutoSelectSql：DB/DDL 两路径 select 拼装收敛（datetime/timestamp → DATE_FORMAT 到秒、
  *   date → DATE_FORMAT 到日（精确 equals，防 contains 把 datetime 误匹配进日期分支）、
- *   普通列传裸列、存在 id 字段追加 order by a.id desc、无 id 不加、type 大小写/空白归一）
+ *   普通列传裸列、type 大小写/空白归一）。P2-7 修复：不再尾部追加 order by a.id desc——排序移到
+ *   BaseQueryTypeMapper.ftl 的 </where> 之后，由 orderByIdDesc 标志 + hasIdField 组合控制（模板级
+ *   渲染断言见 BaseQueryTypeTemplateGoldenTest caseI/caseK）
+ * - hasIdField：id 列探测（表无 id 列时模板不输出排序，同旧「无 id 不加 order by」语义）
  * - collectDictTransformFields：name 小写 endsWith state/status 触发（与 Layout dsp 列同口径），
  *   pcode=PascalCase(字段名)；name=type 等普通字段不触发；无命中返回空表
  */
@@ -35,9 +38,18 @@ class CodeGenerateServiceBuildSqlTest {
             "select a.id,a.code,DATE_FORMAT(a.startdate, '%Y-%m-%d') as startdate," +
                 "DATE_FORMAT(a.createtime, '%Y-%m-%d %H:%i:%s') as createtime," +
                 "DATE_FORMAT(a.synctime, '%Y-%m-%d %H:%i:%s') as synctime,a.price" +
-                " \nfrom biz_demo a\norder by a.id desc",
+                " \nfrom biz_demo a",
             sql,
         )
+    }
+
+    @Test
+    fun buildAutoSelectSql_neverContainsOrderBy() {
+        // P2-7 修复：buildAutoSelectSql 产物不含任何 order by（排序移到 Mapper 模板 </where> 之后）
+        val withId = CodeGenerateService.buildAutoSelectSql("biz_demo", fields("id" to "int", "code" to "string"))
+        assertFalse(withId.lowercase().contains("order by"))
+        val noId = CodeGenerateService.buildAutoSelectSql("v_demo", fields("code" to "string", "status" to "int"))
+        assertFalse(noId.lowercase().contains("order by"))
     }
 
     @Test
@@ -50,6 +62,22 @@ class CodeGenerateServiceBuildSqlTest {
             ),
         )
         assertEquals("select a.code,a.status \nfrom v_demo a", sql)
+    }
+
+    // ---- hasIdField（P2-7 修复）：id 列探测，供 orderByIdDesc 标志组合 ----
+
+    @Test
+    fun hasIdField_caseInsensitiveExactMatch() {
+        assertTrue(CodeGenerateService.hasIdField(fields("id" to "int", "code" to "string")))
+        assertTrue(CodeGenerateService.hasIdField(fields("code" to "string", "ID" to "int"))) // 大写形态按小写比较
+    }
+
+    @Test
+    fun hasIdField_suffixIdOrAbsentNotMatch() {
+        // id 结尾/含 id 的其他列不算（factoryid、orderid），无 id 列返回 false
+        assertFalse(CodeGenerateService.hasIdField(fields("factoryid" to "int", "orderid" to "int")))
+        assertFalse(CodeGenerateService.hasIdField(fields("code" to "string", "status" to "int")))
+        assertFalse(CodeGenerateService.hasIdField(emptyList()))
     }
 
     @Test
@@ -80,7 +108,8 @@ class CodeGenerateServiceBuildSqlTest {
 
     /**
      * 验收口径 DDL：iqc_incoming_check_upgrade.sql:180-198 sync_erp_iqc_fail_log（TableParser.getType
-     * 归一后形态：varchar→string、datetime→datetime、int→int）——4 个 datetime 列包 DATE_FORMAT + id 排序
+     * 归一后形态：varchar→string、datetime→datetime、int→int）——4 个 datetime 列包 DATE_FORMAT；
+     * P2-7 修复：产物不含 order by（排序由 Mapper 模板 </where> 之后按 orderByIdDesc 输出）
      */
     @Test
     fun buildAutoSelectSql_syncErpIqcFailLogDdlSubset() {
@@ -110,7 +139,7 @@ class CodeGenerateServiceBuildSqlTest {
                 "a.status,a.delflag,a.retrycount," +
                 "DATE_FORMAT(a.lastretrytime, '%Y-%m-%d %H:%i:%s') as lastretrytime," +
                 "DATE_FORMAT(a.successtime, '%Y-%m-%d %H:%i:%s') as successtime,a.finalfailflag" +
-                " \nfrom sync_erp_iqc_fail_log a\norder by a.id desc",
+                " \nfrom sync_erp_iqc_fail_log a",
             sql,
         )
     }
