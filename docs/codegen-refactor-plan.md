@@ -6,10 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：P2-6（Imp mapper 导入列定义骨架 + 导入定义 SQL 草稿）随 **2.1.0** 发版（2026-09-20，阶段 2 收尾升 minor ✅）。下一项 **P3-1 字段表编辑体验**（阶段 3 首项；开工先做 GATE-F：grep DengqiMes 既有 Layout 的 easyuiClass 枚举清单）。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6（阶段 0/1/2 全部完成，P2-4 搁置除外）
+- **当前进行到**：P3-1（字段表编辑体验：checkbox 化 + 批量操作 + 下拉）随 **2.1.1** 发版（2026-09-20 ✅，GATE-F 词表已落 gate 表）。下一项 **P3-2 剪贴板 TSV 粘贴导入字段**。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6（阶段 0/1/2 全部完成，P2-4 搁置除外）、P3-1
 - **搁置**：P2-4（2026-09-18 用户决定，见文末搁置区）
-- **未提交变更清单**：无（2.1.0 随 898792a feat 提交，含 build.gradle.kts 的 runIdeForUiTests javaagent 修复）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **未提交变更清单**：无（2.1.1 随 31d5aee feat 提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log、build_runide_p31.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -267,8 +267,8 @@
 
 ## 阶段 3：用户操作体验（patch 顺延）
 
-### P3-1 [预留] 字段表编辑体验：checkbox 化 + 批量操作 + 下拉
-- [ ] 完成
+### P3-1 [预留 2.1.1] 字段表编辑体验：checkbox 化 + 批量操作 + 下拉 ✅（2026-09-20，2.1.1）
+- [x] 完成
 - **现状证据**：布尔列单击即翻转（DataModelGenerator.java:105-135，:109 注释还写着 Double click），无编辑器；30+ 字段逐格点选；easyuiClass 自由文本（:394-413 启发式默认）
 - **改动点**：
   1. is* 布尔列用 JBTable 的 `setDefaultEditor(Boolean.class, ...)` + 复选框渲染器，删除单击翻转 MouseAdapter
@@ -277,6 +277,7 @@
 - **验收标准**：布尔列点击进编辑态（复选框/空格切换），无误触翻转；列批操作生效；下拉可选不可乱填
 - **测试**：runIde 验证
 - **风险**：低
+- **执行记录**：开发委托子代理（开发→编译→单测），主会话独立复跑（编译 EXIT=0、全量 100 例 0 失败）+ 全量 diff 审查。**GATE-F 词表实证（DengqiMes src 侧排除 target，属性形态 `easyuiClass="easyui-xxx"`）**：combobox 1940/datebox 824/textbox 596/datetimebox 152/numberbox 115/timespinner 10/validatebox 7/filebox 2/checkbox 1；**combotree 零出现**——计划原文枚举系臆测，剔除；下拉补首项「（空）」（启发式对 int+id 等返回空串，空值合法常用）。实现：`BOOLEAN_COLUMNS` 精确集合（取代旧 `startsWith("is")`）驱三处（getColumnClass 归派/updateTableModel 归一/列头菜单判定）；**关键坑——is* 值类型混合**（DDL/DB 解析路径 String "true"/"false"，computeIfAbsent 启发式与编辑回写 Boolean），布尔列声明 Boolean 列类后混合形态渲染异常，UI 表格层 `normalizeBoolean` 纯函数归一并回写 field map（TableParser 解析层不动，P0-2 快照锁定）；下游消费点逐一核对（CodeGenerateService String.valueOf/Boolean.parseBoolean、layout.ftl `${field.required!'false'}` 与 isDialogField 布尔上下文——后者从 String "false" 潜在 FreeMarker 异常改善为严格正确）；Boolean 渲染器零代码用平台默认（JTable 自带 Boolean 列类复选框渲染，Object.class 的 CustomTableCellRenderer 不覆盖它）；easyuiClass 按列挂 `TableColumn.setCellEditor`（不污染文本列），JComboBox 非 editable、空串渲染「（空）」落值 ""。单测 94→100（normalizeBoolean 边界含空格不 trim 语义、GATE-F 词表精确序断言、BOOLEAN_COLUMNS 守卫）。**runIde 沙箱验证（HaichengMes order 模块，存档 biz_base_factory DDL 30 字段）**：结构断言 16/16（列类派发/150 布尔格全 Boolean/JCheckBox 编辑器 clickCountToStart=1/旧 MouseAdapter 0/header 批菜单监听 1/下拉 10 项非 editable/平台 BooleanRenderer）；真实鼠标事件（java.awt.Robot，窗口激活态）单击进编辑态（editing=true+JCheckBox）勾选提交 true→二击取消提交 false（**这正是 JDK 标准 Boolean 单元格行为，无误触翻转**）；列头右键菜单全选 30→true/反选→false/全 true 态清空→0 true、非布尔列不弹菜单；下拉编辑选 easyui-combobox 即提交（JComboBox 版 DefaultCellEditor 选择即 ActionEvent→stopCellEditing 标准行为）、选「（空）」落空串。**空格切换未能独立断言**——驱动环境焦点噪声（remote-robot 每请求抢焦点+Windows 后台窗口焦点保护，frame.requestFocus/SetForegroundWindow 均敌不过），系 JCheckBox 编辑器平台标准键盘行为、插件未自定义键盘逻辑，记录在案。日志核验：插件 ERROR=0、SlowOperations 断言全部归因平台 WorkspaceFileIndexDataImpl（沙箱索引同步），at com.zhiyin 零命中。**方法论沉淀（robot 驱动 Swing 表格交互）**：① 合成 MouseEvent 三连发（PRESSED+RELEASED+CLICKED）的 CLICKED 会停掉刚开启的表格编辑——验证编辑启动用单发 PRESSED 或走真实 Robot；② 后台窗口点击编辑格必被「窗口激活焦点转移 → CellEditorRemover 过渡态取消」打断，先 setAlwaysOnTop+requestFocus 激活窗口再操作；③ remote-robot 每次 /js/execute 请求间焦点可能被抢，跨调用的交互链对焦点敏感场景不稳定，时序允许时合并到组件级断言（editCellAt+doClick+dispatchEvent）双轨取证。
 
 ### P3-2 [预留] 剪贴板 TSV 粘贴导入字段
 - [ ] 完成
@@ -385,7 +386,7 @@
 | GATE-C | 菜单 4 表 insert 真实样例与 ID 策略 | P2-3 | ✅ 已确认（2026-09-18，dengqimesv3 实证）：四表 `sys_menu`(code=页面名/useflag=1/icon-blank/i18ntype='zh_CN'/functionurl=./<folder>/<ObjectName>) + `sys_menu_fun`(ID=FID 全局号、PID=菜单id、pagei18nid=661、公共按钮复用 i18n id) + `sys_res_i18n`(KEY=`com.zhiyin.mes.menu.<蛇形>` 反引号、TYPE=menu、maintainer='zhiyin') + `sys_res_i18n_type`(**三语言** zh_CN/zh_TW/en_US，ID 与 i18n 表共享全局号段)；按钮集合跟勾选项联动（默认刷新75+导出80，勾导入加导出模板84+导入454）；**ID 用幂等查 MAX 的 SQL 动态取号**（fun 行 INSERT...SELECT FROM sys_menu 按 code 反查 PID 防孤儿、NOT EXISTS 按 PID+CODE 判重；type 行按 KEY 反查、按 PID+TYPE 判重），pid/seq 留 TODO 人工填；菜单名 zh_TW/en_US 百度翻译自动填、失败 TODO。号段参考（取证时）：menu 1666 / fun 4036 / i18n 共享段 7003 |
 | GATE-D | DengqiMes sys 模块（sys.dengqi.auth/home）Controller/Moc 实际目录口径 | P2-4（已搁置） | ✅ 已核对（2026-09-18，结论归档文末搁置区）：sys 两模块均非生成器目标、app 模块惯例与默认一致 |
 | GATE-E | Moc XML type 词表（统计真实项目既有值） | P2-5 | ✅ 已统计（2026-09-18，DengqiMes 1245 个 Moc）：主流 string 7427/int 6052/datetime 1724/enum 459/decimal 109/date 58/float 50；bigint 主键 id 1109/1113=int；enum 100% 带 enum=（code 主流=字段名）；decimal scale 形态 length="18,4"；varchar/String/long/numeric/tinyint 为杂族——映射表与依据见 P2-5 执行记录 |
-| GATE-F | Layout 中实际出现的 easyuiClass 枚举清单 | P3-1 | 待办（P3-1 开工时 grep） |
+| GATE-F | Layout 中实际出现的 easyuiClass 枚举清单 | P3-1 | ✅ 已统计（2026-09-20，DengqiMes src 侧排除 target）：combobox 1940/datebox 824/textbox 596/datetimebox 152/numberbox 115/timespinner 10/validatebox 7/filebox 2/checkbox 1（按频次降序即下拉序）；**combotree 零出现不收**（计划原文臆测剔除）；下拉补「（空）」选项（空值合法常用）——词表断言进 DataModelGeneratorTest |
 | GATE-G | 传统 Java Web 验证项目路径 | P1-3 | ✅ 已确认：`E:\view\SplashMes\webproj\com.zhiyin.mes.splash.project` |
 | GATE-H | 主从页模板对照页（选一张 DengqiMes 真实主从页） | P4-3 | 待办（P4-3 开工时选） |
 
