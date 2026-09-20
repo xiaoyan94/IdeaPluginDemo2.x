@@ -6,10 +6,10 @@
 
 ## 进度看板
 
-- **当前进行到**：P2-5（类型映射精度增强，GATE-E 词表 + decimal 保留 scale + enum 生成字典属性 + 随版修两处编辑回归）随 2.0.38 发版（2026-09-18；预留号顺延：2.0.37 被并发「URL 搜索空锁修复」占用）。下一项 **P2-6 Imp mapper 导入列定义骨架**（预留 2.1.0，阶段 2 最后一项——做前先反编译核对框架 import 机制，mes-jar-decompile skill）
-- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5
+- **当前进行到**：P2-6（Imp mapper 导入列定义骨架 + 导入定义 SQL 草稿）随 **2.1.0** 发版（2026-09-20，阶段 2 收尾升 minor ✅）。下一项 **P3-1 字段表编辑体验**（阶段 3 首项；开工先做 GATE-F：grep DengqiMes 既有 Layout 的 easyuiClass 枚举清单）。**P2-6 遗留待办**：Excel 导入端到端冒烟待补（执行草稿 SQL→xlsx 导入→temp 表落行断言，用户拍板先发版）
+- **已完成**：P0-1、P0-2、P0-3、P1-1～P1-9、P2-1、P2-2、P2-3、P2-5、P2-6（阶段 0/1/2 全部完成，P2-4 搁置除外）
 - **搁置**：P2-4（2026-09-18 用户决定，见文末搁置区）
-- **未提交变更清单**：无（2.0.38 随本次 feat 提交；2.0.37 并发改动经用户拍板一笔混合提交）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
+- **未提交变更清单**：无（2.1.0 随 898792a feat 提交，含 build.gradle.kts 的 runIdeForUiTests javaagent 修复）。.kotlin/、buildSrc/out/、out/、build_compile.log、hs_err_pid*.log 仍为本机杂项，不随提交。
 - **基线注意**：docs/codegen-baseline 的 Layout 件仍为 2.0.24 错位版（P1-9 重采被用户豁免）——后续 diff 该件的预期差异 = comment 归属修正，勿误判为回归；其余 6 件基线不受影响（BaseQueryTypeLayout.ftl 本次 dsp 列 Title 表达式改动只影响 state/status 字段，基线表 biz_base_factory 无有 comment 的此类字段，基线零漂移）。
 - **版本号规则**：计划中的版本号是预留号，若中途被计划外修复占用则整体顺延 +1，以 CHANGELOG 实际为准。阶段 2 收尾升 minor（2.1.0），阶段 4 升 2.2.0。
 
@@ -254,13 +254,14 @@
 - **风险**：低
 - **执行记录**：开发委托子代理两轮（开发→编译→单测 + 回归补修），主会话独立复跑（编译 EXIT=0、全量 86 例 0 失败）+ 核心 diff 逐处审查。**GATE-E 词表关键结论（DengqiMes 1245 个 Moc 统计）**：主流族 string 7427/int 6052/datetime 1724/enum 459/decimal 109/date 58/float 50/timestamp 22；bigint 主键 id 全库 1113 例中 **1109=int**（long 仅 4 杂族）→ bigint→int 定案；**enum 100% 带 enum= 属性**且字典 code 主流=字段名（statusdsp/defaultlanguage 变体，DDL 推不出真实字典 code，字段名为默认可手改）；decimal scale 表达形态 `length="18,4"`（16 例）/`"18"`（12 例）、81/109 不带 length；varchar(40)/String(239)/numeric/tinyint/agentid/note 均杂族笔误。**关键发现**：P1-2 后 DB 直读已同源 TableParser（DatabaseMetadataUtil.java:127 SHOW CREATE TABLE 直喂 parseCreateTable），`DatabaseMetadataUtil.getType` 成零调用死代码——随版删除（删前 grep 复核），「重写 getType」实际落点=TableParser.getType。**实现**：getType 按词表重写（输出统一小写，default 由原样返回改兜底 string）；length 保留 scale（"P,S"，无 scale 仅 P，int(11)/varchar(64) 不变）；enum 列写 enumRef=列名小写、模板 `enum="${field.enumRef}"`；正则兜底同款修复维持 P1-9 双路径一致；moc.ftl length 输出条件严格限定 string|decimal+判空（**红线：不可改成非空即输出**——int(11)/datetime 的 map length 有值但存量/基线均不输出；判空须 `?string`——FreeMarker 2.3.33 对 Integer×String 的 `!=` 抛 Can't compare，编辑回写路径 length 是 Integer，子代理以证据纠正任务书原文）；easyuiClass 启发式联动 decimal/float→numberbox。**随版修两处编辑链路回归（本项引入/暴露）**：① decimal(P,S) 行编辑 `Integer.parseInt("19,4")` 崩溃（旧版对 datetime 等空串 length 同样会崩）——parseDialogLength 取精度部分 / resolveEditedLength 未改长度原样带回 "P,S"（scale 不因编辑往返丢失）；② 编辑回写白名单重建丢 enumRef——按键存在透传；纯函数 6 例单测。**基线零漂移程序化锁定**：MocTemplateGoldenTest 4 例（基线 DDL→新解析→新模板渲染与基线 Moc 件字节级相等 + int/datetime 不输出 length 红线 + Integer length 回归 + enum 端到端）。单测 73→86。**真实验证（用户，DDL 粘贴全类型核对）**：bigint→int、decimal 19,4/10,2 保留 scale、enum 带 enum=属性、date/datetime/timestamp/float/tinyint 归位、decimal 行 easyui-numberbox、编辑往返不崩不丢——全部通过。**版本与提交**：2.0.37 被并发会话（URL 搜索空锁修复，17:48 已发版）占用，本项顺延 2.0.38（符合版本号顺延规则）；工作副本两笔未提交变更经用户拍板**一笔混合提交**。
 
-### P2-6 [预留 2.1.0] Imp mapper 导入列定义骨架（可选增强）
-- [ ] 完成
+### P2-6 [预留 2.1.0] Imp mapper 导入列定义骨架 ✅（2026-09-20，2.1.0——阶段 2 收尾升 minor）
+- [x] 完成
 - **前置**：P1-4 已上线；Imp mapper 列定义口径见 mes-import-regression skill（Imp*Mapper 列定义读法）
 - **改动点**：勾选导入时顺带生成 Imp mapper 列定义骨架（字段→Excel 列映射，中文列头取 comment），接通导入链路
 - **验收标准**：勾导入后生成的 Service import 方法不再需要手工配 Imp mapper（骨架可用，具体校验规则仍人工补）
 - **测试**：需真实验证（DengqiMes 走一次真实 Excel 导入冒烟）
 - **风险**：中；依赖框架 import 机制细节，做前先反编译核对（mes-jar-decompile skill）
+- **执行记录**：**取证（反编译 ExcelImportService + dengqimesv3 库实证）推翻计划原文字面**——导入链路 = Imp mapper XML（`WEB-INF/etc/business/<Folder>/`，ResourceStreamBuilder 按 TemplateMould/TemplateName 定位）+ **DB 配置行 `utils_base_data_import_define`**（无行 getImportMapper 直接抛「尚未定义」，UNIQUE DataModelCode，id 手工 1..86 → 草稿 MAX+1 动态取号）+ **物理临时表**（insertTempData 直接 insert，列=name 小写+rowno/clientid/factoryid）三件缺一不可；解析期校验实证：required 空/validate 不符/length 超长在 parseDataToList 自动剔行；页面侧 Import()/DownloadTemplate() 走框架通用机制读同一配置表、零改动。**口径拍板（2026-09-20）**：XML+SQL 草稿（插件不执行 SQL）、业务字段全进（排除 9 框架审计列）、isRequired→required；**i18n 属性两轮定稿**：先定「命中 key/未命中省略」，沙箱验证后用户实测海程 order 模块非 datagrid 族（743+269 行）仅「备注」一个精确同值键（python 独立复核属实、非插件 bug），改定「命中 key/未命中兜底 i18n=中文名（getMessage 查不到返回原串等效中文列头）/无 comment 仍省略」。开发委托子代理两轮（初版 + i18n 兜底增量），主会话独立复跑（编译 0、94/94）。**runIde 沙箱真实验证（HaichengMes order 模块 biz_base_factory，GridName=P26Factory，菜单中文名=工厂）**：9+1 件落位（7 件套 + `business/Order/ImpP26FactoryMapper.xml` 直下 + `sql/P26Factory_import_draft.sql`）；Imp mapper 23 列（30−7 在表审计列）逐项符合（required 仅 code、name 小写、无 comment 省略、i18n 命中 note→`com.zhiyin.mes.app.order.note`）；SQL 草稿列序镜像 temp_imp_exception、DataModelName=工厂导入（菜单中文名复用）、表名与 XML 同源；生成模块 `mvn compile -P central,dev` EXIT=0；插件 ERROR=0。**Excel 导入端到端冒烟待补**（用户拍板先发版；需本地起服务 + 库执行草稿 SQL + xlsx 调接口断言 temp 落行，发现问题随下版修）。**附带发现（不立项，记录在案）**：生成时 14 条 SlowOperations 断言全部归因 P1-6 `detectEasyExcel2` EDT 分支（CodeGenerateService.java:893，runReadAction 内 StubIndex 查询；Haicheng 索引状态触发，DengqiMes 沙箱当年未触发）——P2-6 的 i18n 批量在后台 Task 零断言。**方法论沉淀（robot 驱动沙箱）**：runIdeForUiTests 的 license javaagent 必须与真实 IDEA vmoptions 逐字一致（不带 `=jetbrains` 后缀，带了或用旧路径沙箱 ~60-97s 评估弹框退出 exit 7）；robot 协议端点为 `/xpath/component`、`/js/execute`（无 /rpc 前缀）；Rhino JS 走 action 实例 classloader 反射开生成器、模态弹窗 invokeLater 点击 + 轮询填文本防死锁；robot 返回值不回传响应 message、需 throw 才可见。验证产物已清理（10 件 revert 撤 add + 删除 + sql 目录移除，模块 svn status 干净）。
 
 ---
 
