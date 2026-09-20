@@ -57,6 +57,33 @@ public class DataModelGenerator {
     /** 底部两行子面板的行内水平间隙（FlowLayout hgap），最小窗宽余量同源取值，不写死魔法数 */
     private static final int BOTTOM_ROW_HGAP = 10;
 
+    /**
+     * P3-1：字段表布尔列集合——表格模型 getColumnClass 归派 Boolean、updateTableModel 值归一、
+     * 列头右键批操作判定三处同源（比 startsWith("is") 精确，防未来新增非布尔 is 前缀列误入）
+     */
+    static final Set<String> BOOLEAN_COLUMNS = Set.of("isColumnField", "isQueryField", "isDialogField", "isRequired", "isEditHidden");
+
+    /** P3-1：easyuiClass 下拉「空」选项的显示文案（选项实际值为空串，渲染层换显） */
+    static final String EASYUI_EMPTY_OPTION_TEXT = "（空）";
+
+    /**
+     * P3-1：easyuiClass 下拉词表（GATE-F）——枚举为 DengqiMes 既有 Layout.xml 属性
+     * easyuiClass="easyui-xxx" 出现过的集合（按出现频次降序，注释为 grep 计数；combotree
+     * 零出现不收）；首项空串在下拉显示「（空）」——启发式对 int+id 等返回 ""，空值合法且常用
+     */
+    static final String[] EASYUI_CLASS_OPTIONS = {
+            "",
+            "easyui-combobox",    // 1940
+            "easyui-datebox",     // 824
+            "easyui-textbox",     // 596
+            "easyui-datetimebox", // 152
+            "easyui-numberbox",   // 115
+            "easyui-timespinner", // 10
+            "easyui-validatebox", // 7
+            "easyui-filebox",     // 2
+            "easyui-checkbox",    // 1
+    };
+
     private final JFrame frame;
     private final JTable table;
     private final DefaultTableModel tableModel;
@@ -109,6 +136,13 @@ public class DataModelGenerator {
         // TODO
         COLUMNS_NAME = new String[]{"name", "type", "length", "comment", "isColumnField", "isQueryField", "isDialogField", "isRequired", "isEditHidden", "easyuiClass"};
         tableModel = new DefaultTableModel(COLUMNS_NAME, 0){
+            // P3-1：is* 布尔列声明 Boolean 列类——渲染器/编辑器按列类派发（平台默认 Boolean 复选框
+            // 渲染 + DefaultCellEditor(JCheckBox)）；其余列保持 Object，继续走 CustomTableCellRenderer
+            @Override
+            public Class<?> getColumnClass(int columnIndex) {
+                return BOOLEAN_COLUMNS.contains(getColumnName(columnIndex)) ? Boolean.class : Object.class;
+            }
+
             @Override
             public void setValueAt(Object aValue, int row, int column) {
                 super.setValueAt(aValue, row, column);
@@ -123,43 +157,25 @@ public class DataModelGenerator {
             }
         };
         table = new JBTable(tableModel);
-        // 设置自定义的渲染器
+        // 设置自定义的渲染器（Boolean 列由 JTable 平台默认复选框渲染器按列类接管，不吃斑马纹——计划已认可）
         table.setDefaultRenderer(Object.class, new CustomTableCellRenderer());
         table.setRowSelectionAllowed(false);
         table.setCellSelectionEnabled(true);
 
-        // Add mouse listener for double-click
-        table.addMouseListener(new MouseAdapter() {
+        // P3-1：布尔列进编辑态（单击进编辑、复选框点击/空格切换），取代原单击直接翻转的 MouseAdapter
+        // ——旧监听对任意单击（含选格/误触）直接 setValueAt 翻转、不经过编辑器生命周期，是误触翻转的来源
+        DefaultCellEditor booleanCellEditor = new DefaultCellEditor(new JCheckBox());
+        ((JCheckBox) booleanCellEditor.getComponent()).setHorizontalAlignment(JCheckBox.CENTER);
+        booleanCellEditor.setClickCountToStart(1); // 单击进编辑态（JCheckBox 版 DefaultCellEditor 本就默认 1，显式声明意图）
+        table.setDefaultEditor(Boolean.class, booleanCellEditor);
 
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 1) { // Double click
-                    int row = table.rowAtPoint(e.getPoint());
-                    int column = table.columnAtPoint(e.getPoint());
+        // P3-1：easyuiClass 列单独挂下拉编辑器（GATE-F 词表 + 空选项，只能选不能乱填）；不用
+        // setDefaultEditor(String.class, ...)——会波及 name/type/length/comment 的默认文本编辑。
+        // 文本列随之回归 Swing 默认编辑时机：双击 / F2（原 MouseAdapter 的单击 editCellAt 分支已删）
+        table.getColumn("easyuiClass").setCellEditor(new DefaultCellEditor(createEasyuiClassComboBox()));
 
-                    if (row >= 0 && column >= 0) {
-                        String columnName = table.getColumnName(column);
-
-                        // Check if the column name is 'isQueryField'
-                        if (columnName.startsWith("is")) {
-                            Object currentValue = table.getValueAt(row, column);
-                            if (currentValue instanceof Boolean) {
-                                boolean newValue = !(Boolean) currentValue;
-                                table.setValueAt(newValue, row, column);
-                            } else if (currentValue instanceof String) {
-                                boolean newValue = !"true".equalsIgnoreCase((String) currentValue);
-                                table.setValueAt(newValue, row, column);
-                            } else {
-                                table.setValueAt(false, row, column);
-                            }
-                        } else {
-                            // Trigger editing mode manually
-                            table.editCellAt(row, column);
-                        }
-                    }
-                }
-            }
-        });
+        // P3-1：布尔列列头右键批量操作（本列全选/反选/清空）
+        installBooleanColumnHeaderMenu();
 
         JButton addButton = new JButton("添加字段");
         addButton.addActionListener(e -> showEditFieldDialog(null, -1));
@@ -568,9 +584,100 @@ public class DataModelGenerator {
             Object[] rowData = new Object[COLUMNS_NAME.length];
             // 使用 COLUMNS_NAME 数组来初始化 rowData
             for (int i = 0; i < COLUMNS_NAME.length; i++) {
-                rowData[i] = field.get(COLUMNS_NAME[i]);
+                String columnName = COLUMNS_NAME[i];
+                Object value = field.get(columnName);
+                if (BOOLEAN_COLUMNS.contains(columnName)) {
+                    // P3-1：is* 值归一 Boolean 并回写 field map——fields 里 is* 存在 String（TableParser
+                    // DDL/DB 解析路径）与 Boolean（computeIfAbsent 启发式、编辑弹窗回写）两形态，布尔列
+                    // 列类已声明 Boolean，混合形态下渲染/编辑异常；解析层（TableParser）不动，归一只在 UI 层
+                    value = normalizeBoolean(value);
+                    field.put(columnName, value);
+                }
+                rowData[i] = value;
             }
             tableModel.addRow(rowData);
+        }
+    }
+
+    /**
+     * P3-1：is* 布尔键归一（纯函数，供单测）——Boolean 原样；String 按忽略大小写 "true" 判定
+     * （Boolean.parseBoolean 语义，"TRUE"/"True" 亦真、其余含空格/前后缀均 false）；null 与其它类型兜底 false
+     */
+    static Boolean normalizeBoolean(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof String) {
+            return Boolean.parseBoolean((String) value);
+        }
+        return Boolean.FALSE;
+    }
+
+    /**
+     * P3-1：easyuiClass 下拉编辑器的 JComboBox——非 editable（只能选不能乱填）；空串选项在
+     * 下拉里显示「（空）」，编辑落值仍是 ""（与 updateTableModel 启发式对 int+id 等返回的空串一致）
+     */
+    private static JComboBox<String> createEasyuiClassComboBox() {
+        JComboBox<String> comboBox = new JComboBox<>(EASYUI_CLASS_OPTIONS);
+        comboBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Component component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                setText(value == null || value.toString().isEmpty() ? EASYUI_EMPTY_OPTION_TEXT : value.toString());
+                return component;
+            }
+        });
+        return comboBox;
+    }
+
+    /**
+     * P3-1：布尔列列头右键批量操作——「全选/反选/清空」对本列所有数据行生效（rowAtPoint 只命中
+     * 右键一处，故按表格行遍历而非取点击行）。当前表格无 RowSorter（模型行=视图行），仍统一走
+     * table.setValueAt(视图坐标)——由 JTable 内部 convertRowIndexToModel，将来引入排序也不踩坑。
+     */
+    private void installBooleanColumnHeaderMenu() {
+        table.getTableHeader().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (!SwingUtilities.isRightMouseButton(e) || e.getClickCount() != 1) {
+                    return;
+                }
+                int viewColumn = table.getTableHeader().columnAtPoint(e.getPoint());
+                if (viewColumn < 0) {
+                    return;
+                }
+                // 列头可拖拽换序：columnAtPoint 是视图列，判布尔列须经模型列
+                int modelColumn = table.convertColumnIndexToModel(viewColumn);
+                if (!Boolean.class.equals(tableModel.getColumnClass(modelColumn))) {
+                    return; // 非布尔列不出菜单
+                }
+                JPopupMenu menu = new JPopupMenu();
+                JMenuItem selectAllItem = new JMenuItem("本列全选");
+                JMenuItem invertItem = new JMenuItem("本列反选");
+                JMenuItem clearItem = new JMenuItem("本列清空");
+                selectAllItem.addActionListener(ev -> applyBooleanColumnBatch(viewColumn, Boolean.TRUE));
+                invertItem.addActionListener(ev -> applyBooleanColumnBatch(viewColumn, null));
+                clearItem.addActionListener(ev -> applyBooleanColumnBatch(viewColumn, Boolean.FALSE));
+                menu.add(selectAllItem);
+                menu.add(invertItem);
+                menu.add(clearItem);
+                menu.show(e.getComponent(), e.getX(), e.getY());
+            }
+        });
+    }
+
+    /**
+     * P3-1：布尔列批量写值——target 为 null 表示反选（对归一后的 Boolean 取反）；先取消进行中的
+     * 单元格编辑，防编辑器后续 stopCellEditing 回写覆盖批操作值
+     */
+    private void applyBooleanColumnBatch(int viewColumn, Boolean target) {
+        if (table.isEditing()) {
+            table.getCellEditor().cancelCellEditing();
+        }
+        for (int viewRow = 0; viewRow < table.getRowCount(); viewRow++) {
+            Object value = target != null ? target : !normalizeBoolean(table.getValueAt(viewRow, viewColumn));
+            table.setValueAt(value, viewRow, viewColumn);
         }
     }
 

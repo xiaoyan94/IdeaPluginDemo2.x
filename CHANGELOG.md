@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-20
+
+feat: 生成器字段表编辑体验升级（codegen 改造 P3-1，阶段 3 首项）——布尔列复选框化、列头右键批操作、easyuiClass 下拉
+
+- **布尔列（isColumnField/isQueryField/isDialogField/isRequired/isEditHidden）复选框化**：表格模型按列名精确派发 Boolean 列类（`BOOLEAN_COLUMNS` 集合取代旧 `startsWith("is")`），平台默认复选框渲染 + `DefaultCellEditor(JCheckBox)`（单击进编辑态、复选框点击/空格切换，翻转全部走编辑器生命周期）；**删除旧「单击任意次直接翻转」MouseAdapter**——旧实现对选格等任意单击都直接 setValueAt 翻转，是误触翻转来源
+- **布尔值归一**：DDL/DB 解析路径的 is* 值为 String "true"/"false"、启发式与编辑回写为 Boolean 两形态混合，布尔列声明 Boolean 列类后混合形态渲染异常——UI 表格层（updateTableModel/setValueAt）统一归一 `normalizeBoolean`（纯函数），解析层 TableParser 输出不动（P0-2 快照锁定）；下游消费点逐一核对语义不变（`"true".equals(toString())` 对 Boolean 兼容，layout.ftl 布尔上下文反而从潜在 String 异常改善为严格正确）
+- **列头右键批量操作**：布尔列列头右键弹「本列全选 / 本列反选 / 本列清空」，对全部数据行生效（30+ 字段逐格点选成为历史）；先 cancelCellEditing 防编辑器回写覆盖；视图列经 convertColumnIndexToModel 判定（防列拖拽换序误判）；非布尔列不出菜单
+- **easyuiClass 改下拉编辑器**：枚举按 GATE-F 真实词表（grep DengqiMes 既有 Layout.xml `easyuiClass="easyui-xxx"`，src 侧排除 target：combobox 1940/datebox 824/textbox 596/datetimebox 152/numberbox 115/timespinner 10/validatebox 7/filebox 2/checkbox 1，按频次降序）+ 首项「（空）」（启发式对 int+id 等返回空串，空值合法常用）；combo 非 editable 只能选不能乱填；计划原文枚举里的 combotree 零出现不收。按列挂编辑器（TableColumn.setCellEditor），不影响 name/type/length/comment 默认文本编辑
+- 文本列随之回归 Swing 默认编辑时机（双击/F2，旧 MouseAdapter 的单击 editCellAt 分支同删）
+- 单测 94→100（normalizeBoolean 边界 4 例、GATE-F 词表精确断言、BOOLEAN_COLUMNS 集合守卫）；runIde 沙箱验证通过（HaichengMes order 模块 biz_base_factory 30 字段：结构断言 16 项、真实鼠标事件单击进编辑+勾选切换+无误触翻转、批操作全选/反选/清空逐项生效、下拉选值即提交且「（空）」落空串；插件 ERROR=0、SlowOperations 断言均归因平台 fileIndex 层）
+
 ## [2.1.0] - 2026-09-20
 
 feat: 勾选 Excel 导入时追加生成 Imp mapper 列定义骨架 + 导入定义 SQL 草稿（codegen 改造 P2-6，阶段 2 收尾升 minor）——导入链路从「生成即断」到「骨架开箱可用」
@@ -406,7 +417,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.38...v2.1.0
 [2.0.38]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.37...v2.0.38
 [2.0.37]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.36...v2.0.37

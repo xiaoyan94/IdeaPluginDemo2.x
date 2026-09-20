@@ -2,6 +2,7 @@ package com.zhiyin.plugins.ui.codeGenerator
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -124,5 +125,56 @@ class DataModelGeneratorTest {
         assertEquals(0, DataModelGenerator.resolveEditedLength("", 0))
         assertEquals(32, DataModelGenerator.resolveEditedLength(null, 32)) // rowIndex==-1 新增字段
         assertEquals(128, DataModelGenerator.resolveEditedLength(128, 128))
+    }
+
+    // ---- normalizeBoolean（P3-1）：is* 布尔键归一（仅 UI 表格层，TableParser 解析层不动） ----
+    // fields 里 is* 键有 String（TableParser DDL/DB 路径）与 Boolean（computeIfAbsent 启发式、编辑弹窗回写）
+    // 两形态；布尔列列类声明 Boolean 后，updateTableModel 填行前必须先归一
+
+    @Test
+    fun normalizeBoolean_booleanAsIs() {
+        assertEquals(true, DataModelGenerator.normalizeBoolean(true))
+        assertEquals(false, DataModelGenerator.normalizeBoolean(false))
+    }
+
+    @Test
+    fun normalizeBoolean_stringIgnoreCaseTrue() {
+        listOf("true", "TRUE", "True").forEach { s ->
+            assertEquals("字符串[$s] 应归一为 true", true, DataModelGenerator.normalizeBoolean(s))
+        }
+    }
+
+    @Test
+    fun normalizeBoolean_stringFalseGarbageEmptyFallback() {
+        listOf("false", "FALSE", "garbage", "", " true ").forEach { s ->
+            assertEquals("字符串[$s] 应归一为 false（不 trim，Boolean.parseBoolean 语义）",
+                false, DataModelGenerator.normalizeBoolean(s))
+        }
+    }
+
+    @Test
+    fun normalizeBoolean_nullAndOtherTypesFallbackFalse() {
+        assertEquals(false, DataModelGenerator.normalizeBoolean(null))
+        assertEquals(false, DataModelGenerator.normalizeBoolean(1))
+    }
+
+    // ---- EASYUI_CLASS_OPTIONS（P3-1，GATE-F 词表）----
+    // 枚举 = DengqiMes 既有 Layout.xml 出现过的 easyuiClass 集合（按频次降序）；combotree 零出现不收；
+    // 首项空串在下拉显示「（空）」——启发式对 int+id 等返回 ""，空值合法且常用
+
+    @Test
+    fun easyuiClassOptions_gateFVocabulary() {
+        val options = DataModelGenerator.EASYUI_CLASS_OPTIONS.toList()
+        assertEquals("首项是空值选项（下拉显示「（空）」，实际值为空串）", "", options.first())
+        assertEquals(listOf(
+            "easyui-combobox", "easyui-datebox", "easyui-textbox", "easyui-datetimebox", "easyui-numberbox",
+            "easyui-timespinner", "easyui-validatebox", "easyui-filebox", "easyui-checkbox"), options.drop(1))
+        assertTrue("combotree 零出现不进词表", options.none { it.contains("combotree", ignoreCase = true) })
+    }
+
+    @Test
+    fun booleanColumns_exactlyFiveIsColumns() {
+        assertEquals(setOf("isColumnField", "isQueryField", "isDialogField", "isRequired", "isEditHidden"),
+            DataModelGenerator.BOOLEAN_COLUMNS)
     }
 }
