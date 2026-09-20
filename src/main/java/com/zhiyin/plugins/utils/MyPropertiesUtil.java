@@ -420,6 +420,28 @@ public class MyPropertiesUtil {
     }
 
     /**
+     * 批量按值反查非 datagrid i18n（P2-6）：Imp mapper 骨架的 i18n 属性反查搬到后台一次性预查，
+     * EDT 只消费结果，不在 EDT 上跑 FilenameIndex/FileTypeIndex（线程纪律同
+     * {@link #findModuleDataGridI18nPropertiesByValueBatch} 的双分支模式）。
+     * 单值查询语义与 {@link #findModuleI18nPropertiesByValue} 完全一致（逐值独立调用）。
+     */
+    public static Map<String, List<Property>> findModuleI18nPropertiesByValueBatch(
+            Project project, Module module, Collection<String> values) {
+        Map<String, List<Property>> result = new LinkedHashMap<>();
+        Runnable collector = () -> {
+            for (String value : values) {
+                result.put(value, findModuleI18nPropertiesByValue(project, module, value));
+            }
+        };
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ApplicationManager.getApplication().runReadAction(collector);
+        } else {
+            DumbService.getInstance(project).runReadActionInSmartMode(collector);
+        }
+        return result;
+    }
+
+    /**
      * 查找模块Web范围内的 i18n 资源文件
      *
      * @param module 用于定位所属模块

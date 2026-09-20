@@ -59,7 +59,7 @@ public class ${ObjectName}Service extends BaseService {
 <#if generateImport>
 
     public Map import${ObjectName}(FileInputStream fis, String clientIp, Map<String, Object> params) throws Exception {
-        // TODO: 需配置 Imp mapper 列定义后方可启用
+        // TODO: 需执行 sql/${ObjectName}_import_draft.sql（建临时表+注册导入定义）并补 temp→biz upsert（dao import 调用当前被注释）后方可启用
         String userCode = StringUtils.getStringFromMap(params, "usercode");
         String factoryId = StringUtils.getStringFromMap(params, "factoryid");
         params.put("clientid", clientIp);

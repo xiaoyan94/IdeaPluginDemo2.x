@@ -258,8 +258,9 @@ public class DataModelGenerator {
         serviceCheckBox = new JCheckBox("Service", true);
         daoCheckBox = new JCheckBox("Dao", true);
         myBatisMapperCheckBox = new JCheckBox("MyBatisMapper", true);
-        // P1-4：Excel 导入/导出链路可选——导出默认勾（产物与既有行为一致），导入默认不勾（需另行配置 Imp mapper 列定义）
-        excelImportCheckBox = new JCheckBox("Excel 导入（需另行配置 Imp mapper）", false);
+        // P1-4：Excel 导入/导出链路可选——导出默认勾（产物与既有行为一致），导入默认不勾；
+        // P2-6：勾导入时追加生成 Imp mapper 骨架 + 导入定义 SQL 草稿（均为纯文本草稿，插件不执行任何 SQL）
+        excelImportCheckBox = new JCheckBox("Excel 导入（含 Imp mapper 骨架）", false);
         excelExportCheckBox = new JCheckBox("Excel 导出", true);
         // P1-6：导出框架选择——自动=按模块 classpath 探测 EasyExcel2Utils 定新旧写法，可手工覆盖
         exportFrameworkComboBox = new JComboBox<>(new String[]{"自动", "EasyExcel 旧", "EasyExcel2 新"});
@@ -776,6 +777,8 @@ public class DataModelGenerator {
         // comment 的命中结果，EDT 只消费；命中语义与逐字段现查完全一致
         new Task.Backgroundable(project, "分析字段 i18n", false) {
             private Map<String, List<Property>> i18nByComment = Collections.emptyMap();
+            // P2-6：导入骨架字段的非 datagrid i18n 预查结果（后台线程索引反查，EDT 只消费；未勾导入保持空集）
+            private Map<String, List<Property>> importI18nByComment = Collections.emptyMap();
             // P2-3：菜单名翻译结果（后台线程网络 IO；失败保持空串，模板渲染 TODO 形态兜底，不中断生成）
             private String menuNameTw = "";
             private String menuNameEn = "";
@@ -796,6 +799,19 @@ public class DataModelGenerator {
                         LOG.info("菜单名翻译 en_US 失败：" + ExceptionUtil.getMessage(ex));
                     }
                 }
+                // P2-6：导入骨架 i18n 属性反查（findModuleI18nPropertiesByValue 内部走 FilenameIndex/FileTypeIndex）
+                // 同样禁止在 EDT 执行——非 datagrid 范围批量预查（与下方 datagrid 预查同款双分支线程纪律），
+                // 结果经 paramsMap 传回 EDT 由 generateBaseQueryTypeFile 消费（命中取首个 key 作 i18n 属性）
+                if (excelImportCheckBox.isSelected()) {
+                    Set<String> importComments = new LinkedHashSet<>();
+                    for (Map<String, Object> field : fields) {
+                        Object comment = field.get("comment");
+                        if (comment != null) {
+                            importComments.add(comment.toString());
+                        }
+                    }
+                    importI18nByComment = MyPropertiesUtil.findModuleI18nPropertiesByValueBatch(project, module, importComments);
+                }
                 if (!dataQueryRadioButton.isSelected()) {
                     return;
                 }
@@ -815,6 +831,8 @@ public class DataModelGenerator {
                 // P2-3：后台翻译好的菜单名回填 paramsMap，供 generateBaseQueryTypeFile 的菜单 SQL 分支消费
                 paramsMap.put("menuNameTw", menuNameTw);
                 paramsMap.put("menuNameEn", menuNameEn);
+                // P2-6：导入骨架 i18n 预查结果回填 paramsMap，供 generateBaseQueryTypeFile 的 Imp mapper 骨架分支消费
+                paramsMap.put("importI18nByComment", importI18nByComment);
                 if (dataQueryRadioButton.isSelected()) {
                     // P2-2：纯逻辑计算缺失清单（复用预查结果，无索引/PSI 查询）；无缺失时零行为变化（直接生成，不弹窗）
                     CodeGenerateService.I18nMissingSummary missingSummary = CodeGenerateService.collectI18nMissingSummary(

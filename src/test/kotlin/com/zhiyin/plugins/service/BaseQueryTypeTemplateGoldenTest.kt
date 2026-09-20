@@ -60,12 +60,12 @@ class BaseQueryTypeTemplateGoldenTest {
         assertTrue(controller.contains("queryBaseFactoryList"))
     }
 
-    /** 用例 C：勾导入——Service import 方法首行 TODO、Controller 端点在 */
+    /** 用例 C：勾导入——Service import 方法首行 TODO（P2-6 起指向 import_draft.sql 草稿与 temp→biz upsert）、Controller 端点在 */
     @Test
     fun caseC_importTodo_whenImportEnabled() {
         // 模板工作区为 CRLF，断言字面量用 \n——归一后比对，行尾不参与本用例语义
         val service = render("BaseQueryTypeService.ftl", generateImport = true, generateExport = true).replace("\r\n", "\n")
-        assertTrue(service.contains("    public Map importBaseFactory(FileInputStream fis, String clientIp, Map<String, Object> params) throws Exception {\n        // TODO: 需配置 Imp mapper 列定义后方可启用"))
+        assertTrue(service.contains("    public Map importBaseFactory(FileInputStream fis, String clientIp, Map<String, Object> params) throws Exception {\n        // TODO: 需执行 sql/BaseFactory_import_draft.sql（建临时表+注册导入定义）并补 temp→biz upsert（dao import 调用当前被注释）后方可启用"))
         val controller = render("BaseQueryTypeController.ftl", generateImport = true, generateExport = true)
         assertTrue(controller.contains("importBaseFactory"))
     }

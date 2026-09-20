@@ -298,6 +298,9 @@ val runIdeForUiTests by intellijPlatformTesting.runIde.registering {
                 "-Dide.mac.message.dialogs.as.sheets=false",
                 "-Djb.privacy.policy.text=<!--999.999-->",
                 "-Djb.consents.confirmation.enabled=false",
+                // license javaagent 与真实 IDEA idea64.exe.vmoptions 逐字一致（不带 =jetbrains 后缀——带后缀会找错
+                // config 导致 license 未生效、沙箱 ~60s 弹框退出 exit 7；F:\Tools 老写法同样只活 ~97s）
+                "-javaagent:C:/Users/Public/.jb_run/ja-netfilter.jar",
             )
         }
     }

@@ -440,6 +440,17 @@ public final class CodeGenerateService {
             dmLayout.put("menuButtons", buildMenuButtons(resolveGenerateImport(paramsMap)));
         }
 
+        // P2-6：Excel 导入 Imp mapper 骨架——勾导入时追加两件产物（Imp mapper 列定义 XML + 导入定义 SQL 草稿，均为纯文本不执行）；
+        // importI18nByComment 为 DataModelGenerator 后台预查好的「comment → 非 datagrid i18n 命中」
+        // （findModuleI18nPropertiesByValueBatch，命中取首个 key），本方法 EDT 上不做索引反查，缺失按未命中渲染（i18n 属性省略）
+        boolean importSkeletonEnabled = resolveGenerateImport(paramsMap);
+        if (importSkeletonEnabled) {
+            dmLayout.put("tempTableName", deriveTempTableName(String.valueOf(paramsMap.get("tableName"))));
+            dmLayout.put("importColumns", buildImportColumns(fields, castImportI18nByComment(paramsMap)));
+            dmLayout.put("importDataModelName", resolveImportDataModelName(paramsMap, modelName));
+            dmLayout.put("importFolder", folder);
+        }
+
         // Generate the XML file
         Map<String, GenerateFileResult> results = new LinkedHashMap<>();
         try {
@@ -491,6 +502,24 @@ public final class CodeGenerateService {
                 }
                 results.put(outputFileName + "_menu_draft.sql",
                         generateXmlFile(project, module, dmLayout, "menu.sql.ftl", "src/main/resources/sql", outputFileName + "_menu_draft.sql"));
+            }
+            // P2-6：Imp mapper 骨架两件——列定义 XML 落 WEB-INF/etc/business/<folder>/（与 Moc/Layout 同源 folder 口径，
+            // 传统 Java Web 项目走 META-INF 分支，P1-3 双写修复口径不回归）；导入定义 SQL 草稿与菜单草稿同目录同机制
+            // （目录通常不存在，先 VFS 建目录再走通用生成），结果照常进 results 参与汇总通知
+            if (importSkeletonEnabled) {
+                String impMapperOutputPath = "src/main/webapp/WEB-INF/etc/business/" + folder;
+                if (ProjectTypeChecker.isTraditionalJavaWebProject(project, module)) {
+                    impMapperOutputPath = "src/main/resources/META-INF/resources/WEB-INF/etc/business/" + folder;
+                }
+                results.put("Imp" + outputFileName + "Mapper.xml",
+                        generateXmlFile(project, module, dmLayout, "ImpMapper.ftl", impMapperOutputPath, "Imp" + outputFileName + "Mapper.xml"));
+                VirtualFile importSqlContentRoot = findModuleContentRoot(module);
+                if (importSqlContentRoot != null) {
+                    WriteCommandAction.writeCommandAction(project).run(() ->
+                            VfsUtil.createDirectoryIfMissing(importSqlContentRoot, "src/main/resources/sql"));
+                }
+                results.put(outputFileName + "_import_draft.sql",
+                        generateXmlFile(project, module, dmLayout, "import.sql.ftl", "src/main/resources/sql", outputFileName + "_import_draft.sql"));
             }
         } catch (Exception ex) {
             Messages.showErrorDialog("无法生成件，异常： " + ex.getMessage(), "操作失败");
@@ -723,6 +752,106 @@ public final class CodeGenerateService {
             }
         }
         return sb.toString();
+    }
+
+    // P2-6：paramsMap 里后台预查的「comment → 非 datagrid i18n 命中」类型安全读取（无键/类型不符按空集，不抛异常）
+    @SuppressWarnings("unchecked")
+    private static Map<String, List<Property>> castImportI18nByComment(Map<String, Object> paramsMap) {
+        Object precomputed = paramsMap.get("importI18nByComment");
+        return precomputed instanceof Map ? (Map<String, List<Property>>) precomputed : Collections.emptyMap();
+    }
+
+    // P2-6：Imp mapper 骨架排除列（框架/审计列不进 Excel 导入列定义），均按小写比较（包级静态，供单测锁定）
+    static final Set<String> IMPORT_EXCLUDED_COLUMNS = Set.of(
+            "id", "factoryid", "useflag", "maintainer", "maintaintime",
+            "creator", "createtime", "delflag", "version");
+
+    // P2-6：temp_imp 临时表名推导（纯函数，供单测）：biz_base_factory → temp_imp_base_factory；
+    // 无 biz_ 前缀的表名直接接 temp_imp_（base_factory → temp_imp_base_factory）；已是 temp_imp_ 形态幂等返回；
+    // null/空白返回空串；统一小写（消费端 insertTempDataByExcel 列名恒小写）
+    static String deriveTempTableName(String tableName) {
+        if (isEmptyOrSpaces(tableName)) {
+            return "";
+        }
+        String name = tableName.trim().toLowerCase();
+        if (name.startsWith("temp_imp_")) {
+            return name;
+        }
+        if (name.startsWith("biz_")) {
+            name = name.substring("biz_".length());
+        }
+        return "temp_imp_" + name;
+    }
+
+    // P2-6：Imp mapper 骨架列集（纯函数，供单测）——排除 9 个框架/审计列后按字段表顺序 col 连续 1..N；
+    // name 统一小写（insertTempDataByExcel 行 Map 键 = name 小写）、required=字段表 isRequired=true（TableParser
+    // 产 String、编辑对话框回写 Boolean，两形态均按 toString 解析）、description=comment（空/缺省不输出）、
+    // i18n=非 datagrid 反查命中首个 key，未命中且 comment 非空时兜底 i18n=comment 本身（口径更新 2026-09-20，
+    // 不再省略），comment 为空仍不输出（真实样例同款）；length 供 SQL 草稿列长（XML 不消费）
+    static List<Map<String, Object>> buildImportColumns(List<Map<String, Object>> fields,
+                                                        Map<String, List<Property>> importI18nByComment) {
+        Map<String, List<Property>> i18nByComment = importI18nByComment == null ? Collections.emptyMap() : importI18nByComment;
+        List<Map<String, Object>> columns = new ArrayList<>();
+        int col = 0;
+        for (Map<String, Object> field : fields) {
+            String fieldName = String.valueOf(field.get("name")).toLowerCase();
+            if (IMPORT_EXCLUDED_COLUMNS.contains(fieldName)) {
+                continue;
+            }
+            col++;
+            Map<String, Object> column = new LinkedHashMap<>();
+            column.put("name", fieldName);
+            column.put("col", col);
+            column.put("length", resolveImportColumnLength(field.get("length")));
+            Object commentObj = field.get("comment");
+            String comment = commentObj == null ? null : commentObj.toString();
+            if (!isEmptyOrSpaces(comment)) {
+                column.put("description", comment);
+            }
+            Object required = field.get("isRequired");
+            if (required != null && Boolean.parseBoolean(required.toString())) {
+                column.put("required", Boolean.TRUE);
+            }
+            if (!isEmptyOrSpaces(comment)) {
+                List<Property> properties = i18nByComment.getOrDefault(comment, Collections.emptyList());
+                if (!properties.isEmpty()) {
+                    column.put("i18nKey", properties.get(0).getKey());
+                } else {
+                    // 口径更新（2026-09-20）：反查未命中兜底 i18n=中文名（comment）本身，不再省略；
+                    // comment 为空的字段（无 description）不进本分支，仍不输出 i18n（真实样例同款）
+                    column.put("i18nKey", comment);
+                }
+            }
+            columns.add(column);
+        }
+        return columns;
+    }
+
+    // P2-6：临时表列长（纯函数，供单测）——业务列统一 varchar，默认 255；字段 DDL 长度精度部分
+    // （"P,S" 取 P，P2-5 length 形态）> 255 时取 DDL 长度（如 varchar(1024)），非数字/空/null 取 255
+    static int resolveImportColumnLength(Object length) {
+        if (length != null) {
+            String s = length.toString();
+            int comma = s.indexOf(',');
+            if (comma >= 0) {
+                s = s.substring(0, comma);
+            }
+            try {
+                return Math.max(Integer.parseInt(s.trim()), 255);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 255;
+    }
+
+    // P2-6：导入定义 DataModelName（纯函数，供单测）——同时勾菜单 SQL 且有菜单中文名时复用「<菜单中文名>导入」，
+    // 否则「<ObjectName>导入」兜底（SQL 草稿文件头注释提醒可改中文）
+    static String resolveImportDataModelName(Map<String, Object> paramsMap, String objectName) {
+        Object menuNameZh = paramsMap == null ? null : paramsMap.get("menuNameZh");
+        if (menuNameZh != null && !isEmptyOrSpaces(menuNameZh.toString())) {
+            return menuNameZh + "导入";
+        }
+        return objectName + "导入";
     }
 
     // P2-3：菜单按钮集合与勾选项联动（DengqiMes 实证口径）——默认仅刷新+导出；

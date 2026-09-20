@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-20
+
+feat: 勾选 Excel 导入时追加生成 Imp mapper 列定义骨架 + 导入定义 SQL 草稿（codegen 改造 P2-6，阶段 2 收尾升 minor）——导入链路从「生成即断」到「骨架开箱可用」
+
+- **框架导入机制取证后按真实链路配套**（反编译 ExcelImportService + dengqimesv3 库实证）：导入链路 = Imp mapper 列定义 XML（`WEB-INF/etc/business/<Folder>/`）+ DB 配置行 `utils_base_data_import_define`（无行 getImportMapper 直接抛「尚未定义」）+ 物理临时表（insertTempDataByExcel 直接 insert）三件缺一不可——只生成 XML 链路仍断，故本版配套生成 SQL 草稿（插件仍不执行任何 SQL，与 P2-3 口径一致）
+- **Imp mapper 骨架**（`ImpMapper.ftl`）：业务字段全进（排除 id/factoryid/useflag/maintainer/maintaintime/creator/createtime/delflag/version 9 个框架审计列）、col 连续 1..N、name 小写（消费端 toLowerCase）、description=comment（空则省略，真实样例同款）、`required="true"` 映射字段表必填列（解析期自动剔空行报错，EasyExcelUtils 反编译实证）、`i18n` 属性=comment 在模块**非 datagrid** i18n 资源按值反查命中 key（复用 `findModuleI18nPropertiesByValue` 范围），**未命中兜底 i18n=中文名**（框架 getMessage 查不到 key 返回原串，等效中文列头；2026-09-20 口径更新），无 comment 字段仍省略（真实样例同款）；传统 Java Web 项目走 Moc 同款 META-INF 分支（P1-3 双写不回归）
+- **导入定义 SQL 草稿**（`import.sql.ftl` → `sql/<ObjectName>_import_draft.sql`）：`CREATE TABLE IF NOT EXISTS temp_imp_*`（列序/框架列/引擎字符集逐列镜像真实 temp_imp_exception；列长默认 varchar(255)、DDL 长度>255 取 DDL 长度）+ 幂等 INSERT 配置行（id 动态取 MAX+1、UNIQUE DataModelCode NOT EXISTS 判重，P2-3 同款）；表名与 XML 同一变量渲染；DataModelName 复用同次生成的菜单中文名、无则 `<ObjectName>导入` 兜底
+- Service 模板 TODO 改指向草稿 SQL（temp→biz upsert 仍人工补，dao import 注释不动）；导入复选框文案改「Excel 导入（含 Imp mapper 骨架）」
+- **i18n 反查线程纪律**：新增 `findModuleI18nPropertiesByValueBatch`（EDT runReadAction / 后台 runReadActionInSmartMode 双分支），预查在既有后台 Task 内完成、EDT 只消费 paramsMap 结果——不在 EDT 新增 FilenameIndex/FileTypeIndex 调用（P1-7 断言教训）
+- 快照护栏抓出并修复 1 个真实模板 bug：FreeMarker 默认数字格式千分位会把 `varchar(1024)` 渲染成 `varchar(1,024)`，列长改 `?c` 计算机格式
+- 单测 86→94（新增 ImportSkeletonTemplateGoldenTest 8 例：排除列/required/i18n 三形态、temp 表名推导幂等、SQL 草稿列长映射与 XML 同表名、幂等 INSERT 双分支）；默认组合（不勾导入）既有 golden 零漂移红线锁定
+- 验证：编译 + 全量单测 94 例 0 失败；runIde 沙箱真实验证通过（HaichengMes order 模块 biz_base_factory 生成 9+1 件落位与内容逐项核对、i18n 命中/兜底/省略三形态、生成模块 `mvn compile -P central,dev` 通过、生成全程插件 ERROR=0）；Excel 导入端到端冒烟（执行草稿 SQL→xlsx 导入→临时表落行）待补（用户决定先发版，发现问题随下版修）
+
 ## [2.0.38] - 2026-09-18
 
 feat: 代码生成器类型映射精度增强（codegen 改造 P2-5）——Moc 类型/长度按真实项目词表映射，decimal 保留 scale、enum 生成字典属性
@@ -393,7 +406,8 @@ feat(build): 添加插件上传至CF R2存储的功能
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
 - 初始化编译环境，基础构建框架，插件开发环境搭建
 
-[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.38...HEAD
+[Unreleased]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.38...v2.1.0
 [2.0.38]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.37...v2.0.38
 [2.0.37]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.36...v2.0.37
 [2.0.36]: https://github.com/xiaoyan94/IdeaPluginDemo2.x/compare/v2.0.35...v2.0.36

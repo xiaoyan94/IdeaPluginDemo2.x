@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper version="v1">
+    <table name="temp_imp_base_factory">
+        <column name="code" col="1" description="工厂编号" required="true" i18n="com.zhiyin.mes.app.web.factory_code"/>
+        <column name="name" col="2" description="工厂名称" i18n="工厂名称"/>
+        <column name="address" col="3" description="地址" i18n="地址"/>
+        <column name="note" col="4" description="备注" i18n="备注"/>
+        <column name="defaultlang" col="5"/>
+        <column name="3rdflag" col="6" description="第三方推送工厂" i18n="第三方推送工厂"/>
+        <column name="price" col="7" description="单价" required="true" i18n="单价"/>
+    </table>
+</mapper>
