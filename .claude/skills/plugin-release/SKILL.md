@@ -71,6 +71,7 @@ curl -sI https://idea-plugin.oss.vaetech.uk/OneClickNavigationV2.X-<新版本>.z
 
 ## 常见坑
 
+- **验证先行时别先跑 copyPluginToLocalDir**：它会立即把 Unreleased 归档成版本章节——若验证暴露问题改了代码，已归档章节内容写死（重跑还会重复章节）。正确顺序：`buildPlugin` 出 zip（用户 Install Plugin from Disk 或 runIde 沙箱验证，见 skill runide-robot-verify）→ 验证通过 → 再走 CHANGELOG/版本号/copyPluginToLocalDir/上传；CHANGELOG 里未做的验证项如实写「待补」，不预写「通过」
 - **patchChangelog 归档失败**：`## [Unreleased]` 章节必须存在（空也可）；版本号章节手写后再跑任务不会被覆盖，会重复
 - **上传报 MissingValueException**：五个 R2 环境变量有缺失，任务对所有配置 `.get()` 无默认值
 - **发布后旧实例不提示更新**：确认 updatePlugins.xml 公网内容已指向新版本（第 6 步），IDE 检查更新有缓存可重启验证
