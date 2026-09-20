@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: OneClickNavigation2.X 插件发版流程：改版本号 → CHANGELOG [Unreleased] 写变更 → copyPluginToLocalDir（自动归档 changelog + 出本地产物）→ uploadPluginToR2ByAmazonS3 发布 R2 → 公网验证 → git 提交。触发词："发布插件"、"发版"、"出个包"、"升级版本"、"copyPluginToLocalDir"、"uploadPluginToR2ByAmazonS3"。
+description: OneClickNavigation2.X 插件发版流程：改版本号 → CHANGELOG [Unreleased] 写变更 → copyPluginToLocalDir（自动归档 changelog + 出本地产物）→ uploadPluginToR2ByAmazonS3 发布 R2 → 公网验证 → git 提交并打 v<版本> tag。触发词："发布插件"、"发版"、"出个包"、"升级版本"、"copyPluginToLocalDir"、"uploadPluginToR2ByAmazonS3"。
 
 ---
 
@@ -63,11 +63,13 @@ curl -sI https://idea-plugin.oss.vaetech.uk/OneClickNavigationV2.X-<新版本>.z
 # 应 HTTP 200 + application/zip
 ```
 
-### 7. git 提交
+### 7. git 提交并打 tag
 
 - 显式文件清单：本次源码改动 + `CHANGELOG.md` + `gradle.properties`（+ `.claude/skills/` 等文档类改动）
 - 构建产物（`local-publish/`、`buildSrc/out/`、`out/`、`.kotlin/`、`hs_err_pid*.log`、`build_compile.log`）不入库
 - message 风格：`fix: ...并发布 X.Y.Z` / `chore(release): 发布 X.Y.Z 版本...`，正文列要点
+- 提交后立即打 tag：`git tag v<X.Y.Z>`（轻量标签，指向上一步刚提交的发版 commit，与历史 v0.0.x/v2.0.x 风格一致）
+- 版本号有跳号（如 2.0.23）属正常，跳过的版本不补 tag
 
 ## 常见坑
 
@@ -75,3 +77,4 @@ curl -sI https://idea-plugin.oss.vaetech.uk/OneClickNavigationV2.X-<新版本>.z
 - **patchChangelog 归档失败**：`## [Unreleased]` 章节必须存在（空也可）；版本号章节手写后再跑任务不会被覆盖，会重复
 - **上传报 MissingValueException**：五个 R2 环境变量有缺失，任务对所有配置 `.get()` 无默认值
 - **发布后旧实例不提示更新**：确认 updatePlugins.xml 公网内容已指向新版本（第 6 步），IDE 检查更新有缓存可重启验证
+- **一版一 commit 才有 tag 可打**：发版提交要独立成 commit，别把两个版本的改动混进同一提交——混提交后先发的版本（如 2.0.19、2.0.37）找不到能诚实指向的 commit，tag 只能缺（2026-09 补 tag 时因此缺 v2.0.19/v2.0.37）
